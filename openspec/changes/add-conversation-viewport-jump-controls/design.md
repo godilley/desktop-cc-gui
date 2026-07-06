@@ -1,0 +1,81 @@
+## Context
+
+The messages surface renders `.messages-shell` (`Messages.tsx:2178`) containing
+`MessagesAnchorRail` and the scroll container `.messages` (`containerRef`,
+`Messages.tsx:2189`). Scroll ownership was just consolidated into
+`useMessagesScrollOwner` (`src/features/messages/hooks/useMessagesScrollOwner.ts`),
+which holds the single `stickToBottom` truth and exposes
+`setStick(stick)` / `requestFollow()` / `notifyUserScroll()`. History is trimmed
+by a live-tail window; `revealAllHistoryItems(mode)` (`Messages.tsx:1763`) reveals
+all items, and its `useLayoutEffect` (`:1771`) already does `setStick(false)` +
+`scrollTop = 0` for `mode === "manual"`. The bottom sentinel is `bottomRef`;
+`MessagesOutlineFloater` is the styling/interaction template for a corner floater.
+
+## Goals / Non-Goals
+
+**Goals:**
+
+- Surface jump-to-start and jump-to-latest without adding a second scroll owner.
+- Land jump-to-start on the true first message (reveal collapsed history first).
+- Keep jump-to-latest sticky (re-arm follow), matching chat convention.
+
+**Non-Goals:**
+
+- No changes to anchor-rail / outline-floater / scroll-owner internals.
+- No new scroll geometry math — reuse existing primitives only.
+
+## Decisions
+
+1. Route all scroll writes through the scroll owner.
+   - Option A (chosen): handlers call `revealAllHistoryItems("manual")` and
+     `scrollOwner.setStick/requestFollow`; the owner keeps a coherent
+     stick-to-bottom truth.
+   - Option B: handlers set `scrollTop` directly.
+   - Trade-off: B is shorter but desynchronizes the owner and reintroduces the
+     end-of-stream jump/yank class the owner was built to remove.
+
+2. Jump-to-start reuses the existing manual-reveal path, with a no-op guard.
+   - `revealAllHistoryItems("manual")` triggers the reveal + `scrollTop = 0`
+     layout effect only when `showAllHistoryItems` actually transitions to true.
+   - When history is already fully shown (short thread, or already expanded),
+     the handler MUST directly `setStick(false)` and set `scrollTop = 0` so the
+     button is never a silent no-op.
+
+3. Jump-to-latest re-arms stick then scrolls.
+   - `setStick(true)` first, then `bottomRef.current?.scrollIntoView({ behavior:
+     "instant", block: "end" })` (or `requestFollow()`), so subsequent streamed
+     content keeps following.
+
+4. Presence gating is derived from live scroll state, not new global state.
+   - Compute "is scrollable", "at top", "at bottom" from `containerRef` in the
+     existing scroll handler (`updateAutoScroll`) or a light local state; hide
+     each control at its own extreme. Keep it cheap — no per-frame layout thrash.
+
+## Risks / Trade-offs
+
+- [Risk] The reveal-all path can be expensive on very long threads (mounts full
+  history).
+  - Mitigation: it is user-initiated and identical to the existing "show all
+    history" behavior; no new cost class.
+- [Risk] Presence-gating that reads geometry every scroll could add scroll-handler
+  work during streaming.
+  - Mitigation: reuse the existing throttled scroll path; store booleans in a ref
+    / low-frequency state; do not measure on every streamed token.
+- [Risk] A handler that bypasses the scroll owner would resurrect the multi-owner
+  jump bug.
+  - Mitigation: Decision 1 forbids direct `scrollTop` writes except the guarded
+    jump-to-start `scrollTop = 0` fallback, which also sets stick false.
+
+## Migration Plan
+
+1. Author OpenSpec proposal / design / spec delta / tasks.
+2. Add `MessagesViewportJumpControls` + wire handlers/mount in `Messages.tsx`.
+3. Add i18n + CSS; add a focused component test.
+4. Run focused test, `npm run typecheck`, `openspec validate --strict`.
+5. Rollback restores the touched files; no runtime-state migration.
+
+## Open Questions
+
+- Exact placement (corner) and whether to share a container with the outline
+  floater — deferred to implementation, constrained only by "match
+  `MessagesOutlineFloater` pattern".
