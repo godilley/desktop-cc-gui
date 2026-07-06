@@ -493,13 +493,9 @@ export const Messages = memo(function Messages({
   const [viewportJump, setViewportJump] = useState<{
     canJumpToStart: boolean;
     canJumpToLatest: boolean;
-    prevAnchorId: string | null;
-    nextAnchorId: string | null;
   }>({
     canJumpToStart: false,
     canJumpToLatest: false,
-    prevAnchorId: null,
-    nextAnchorId: null,
   });
   const [historyExpansionMode, setHistoryExpansionMode] =
     useState<MessagesHistoryExpansionMode>(null);
@@ -1822,46 +1818,17 @@ export const Messages = memo(function Messages({
       const canJumpToStart = scrollable && container.scrollTop > SCROLL_THRESHOLD_PX;
       const canJumpToLatest =
         scrollable && !isMessagesScrollNearBottom(container, SCROLL_THRESHOLD_PX);
-      // "Current" anchor = the one nearest the active-anchor pivot line (same
-      // reference the rail uses), then step +/-1. Choosing the current by nearest
-      // pivot (not a raw scrollTop threshold) means a small scroll offset never
-      // makes "next" re-select the current message. A bottom-edge correction makes
-      // the last message reachable (the pivot never reaches it at the very bottom).
-      const pivot = container.scrollTop + Math.min(96, container.clientHeight * 0.32);
-      const nodes = messageNodeByIdRef.current;
-      let currentIndex = -1;
-      let bestDistance = Number.POSITIVE_INFINITY;
-      messageAnchors.forEach((anchor, index) => {
-        const top = nodes.get(anchor.id)?.offsetTop;
-        if (typeof top !== "number") {
-          return;
-        }
-        const distance = Math.abs(top - pivot);
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          currentIndex = index;
-        }
-      });
-      const atBottom = isMessagesScrollNearBottom(container, SCROLL_THRESHOLD_PX);
-      if (atBottom && messageAnchors.length > 0) {
-        currentIndex = messageAnchors.length - 1;
-      }
-      const prevAnchorId =
-        currentIndex > 0 ? messageAnchors[currentIndex - 1].id : null;
-      const nextAnchorId =
-        !atBottom && currentIndex >= 0 && currentIndex < messageAnchors.length - 1
-          ? messageAnchors[currentIndex + 1].id
-          : null;
+      // prev/next targets are NOT derived here — they follow the rail's active
+      // anchor (see the `activeAnchorId`-driven memo below), so stepping is always
+      // relative to the message the rail highlights, not a scroll-geometry guess.
       setViewportJump((prev) =>
         prev.canJumpToStart === canJumpToStart &&
-        prev.canJumpToLatest === canJumpToLatest &&
-        prev.prevAnchorId === prevAnchorId &&
-        prev.nextAnchorId === nextAnchorId
+        prev.canJumpToLatest === canJumpToLatest
           ? prev
-          : { canJumpToStart, canJumpToLatest, prevAnchorId, nextAnchorId },
+          : { canJumpToStart, canJumpToLatest },
       );
     }
-  }, [messageAnchors, scheduleAnchorUpdate, scrollOwner]);
+  }, [scheduleAnchorUpdate, scrollOwner]);
   const handleJumpToLatest = useCallback(() => {
     // Re-arm stick BEFORE scrolling so the live-follow effect keeps tailing
     // subsequently streamed content instead of the user's old scrolled-up spot.
@@ -2231,7 +2198,27 @@ export const Messages = memo(function Messages({
   // real scroll position (targets resolved in updateAutoScroll). Disabled when
   // there is no anchor in that direction, so stepping is correct at both ends —
   // fixes "up" at the very bottom skipping the last message.
-  const { prevAnchorId, nextAnchorId } = viewportJump;
+  // Step relative to the anchor the rail currently highlights (`activeAnchorId`,
+  // which resolves to the last message on first load), not a scroll-geometry
+  // guess — so "previous"/"next" always move from the visibly-selected message.
+  const { prevAnchorId, nextAnchorId } = useMemo(() => {
+    if (!hasAnchorRail || messageAnchors.length === 0) {
+      return { prevAnchorId: null, nextAnchorId: null };
+    }
+    let currentIndex = activeAnchorId
+      ? messageAnchors.findIndex((anchor) => anchor.id === activeAnchorId)
+      : -1;
+    if (currentIndex < 0) {
+      currentIndex = messageAnchors.length - 1;
+    }
+    return {
+      prevAnchorId: currentIndex > 0 ? messageAnchors[currentIndex - 1].id : null,
+      nextAnchorId:
+        currentIndex < messageAnchors.length - 1
+          ? messageAnchors[currentIndex + 1].id
+          : null,
+    };
+  }, [activeAnchorId, hasAnchorRail, messageAnchors]);
   const canPrevMessage = prevAnchorId !== null;
   const canNextMessage = nextAnchorId !== null;
   const handlePrevMessage = useCallback(() => {
