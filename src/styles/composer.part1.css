@@ -88,7 +88,12 @@
   padding: 12px;
   gap: 8px;
   box-shadow: none;
-  transition: all 0.2s ease;
+  /* Was `transition: all` — that made WebKitGTK watch/animate every property on
+     :focus-within, forcing a full-box repaint that cascades through the always-on
+     backdrop-filter bars (topbar/tabbar) and pins the browser in paint for
+     seconds on large projects. Only border-color actually changes on focus, so
+     scope the transition to it. */
+  transition: border-color 0.2s ease;
 }
 
 .composer-input.is-resizing {

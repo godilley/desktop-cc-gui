@@ -54,4 +54,22 @@ describe("syntax", () => {
     const highlighted = highlightLine("<tag>", "unknown-language");
     expect(highlighted).toBe("&lt;tag&gt;");
   });
+
+  it("caches highlighted output: a repeat call returns the identical string reference", () => {
+    // The identical reference is what lets dangerouslySetInnerHTML consumers skip
+    // re-writing the DOM on re-render, avoiding WebKitGTK style-recalc.
+    const first = highlightLine("const x = 1;", "typescript");
+    const second = highlightLine("const x = 1;", "typescript");
+    expect(first).toContain("token");
+    expect(second).toBe(first); // value-equal
+    expect(Object.is(first, second)).toBe(true); // same reference (cache hit)
+  });
+
+  it("does not cross language boundaries in the cache", () => {
+    const asJs = highlightLine("const value = 1;", "javascript");
+    const asPlain = highlightLine("const value = 1;", "unknown-language");
+    expect(asJs).toContain("token");
+    expect(asPlain).not.toContain("token");
+    expect(asJs).not.toBe(asPlain);
+  });
 });

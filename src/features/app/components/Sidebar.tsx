@@ -909,6 +909,18 @@ function SidebarImpl({
       if (!isWorkspaceMatch(workspace)) {
         return;
       }
+      // Cheap early-out BEFORE the expensive getProjectedThreads (which pulls in
+      // activeItems and so recomputes on every message-stream tick): if this
+      // workspace has no pinned thread at all, there's nothing to build. Checks
+      // the base thread list, which is stable across streaming. Without this the
+      // whole memo re-ran O(all threads) on every stream tick even with 0 pins.
+      const baseThreads = threadsByWorkspace[workspace.id] ?? [];
+      const hasPinnedThread = baseThreads.some((thread) =>
+        isThreadPinned(workspace.id, thread.id),
+      );
+      if (!hasPinnedThread) {
+        return;
+      }
       const threads = getProjectedThreads(workspace.id);
       if (!threads.length) {
         return;
@@ -963,6 +975,8 @@ function SidebarImpl({
       );
   }, [
     workspaces,
+    threadsByWorkspace,
+    isThreadPinned,
     getProjectedThreads,
     getThreadRows,
     getPinTimestamp,

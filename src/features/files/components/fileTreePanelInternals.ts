@@ -82,7 +82,11 @@ const SPECIAL_BUILD_ARTIFACT_DIRECTORIES = new Set([
   ".dart_tool",
 ]);
 export const EMPTY_DIRECTORY_METADATA: WorkspaceDirectoryEntry[] = [];
-export const FILE_TREE_VIRTUALIZATION_THRESHOLD = 250;
+// Lowered from 250: on WebKitGTK (Tauri's Linux webview) an un-virtualized tree
+// of even ~40 rows (each with 2 inline SVGs + hover selectors) causes multi-second
+// style-recalc/paint. Virtualizing at 30 keeps the live DOM small; the virtual
+// path already applies `contain` and is the production path for large trees.
+export const FILE_TREE_VIRTUALIZATION_THRESHOLD = 30;
 
 export function isSameOrDescendantFileTreePath(path: string, rootPath: string) {
   return path === rootPath || path.startsWith(`${rootPath}/`);

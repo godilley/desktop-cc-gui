@@ -145,19 +145,21 @@ export function useGitStatus(
         const resolvedBranchName = isGitRepository
           ? resolveBranchName(data.branchName, cached)
           : "";
-        const nextStatus = {
+        const freshStatus = {
           ...data,
           isGitRepository,
           branchName: resolvedBranchName,
           error: isGitRepository ? null : "not a git repository",
         };
+        // Reuse the cached object (stable identity) when the poll changed nothing,
+        // so identity-keyed downstream memos don't re-run every 15s.
         setStatus((currentStatus) => {
-          if (areGitStatusesEqual(currentStatus, nextStatus)) {
+          if (areGitStatusesEqual(currentStatus, freshStatus)) {
             cachedStatusRef.current.set(workspaceId, currentStatus);
             return currentStatus;
           }
-          cachedStatusRef.current.set(workspaceId, nextStatus);
-          return nextStatus;
+          cachedStatusRef.current.set(workspaceId, freshStatus);
+          return freshStatus;
         });
       } catch (err) {
         console.error("Failed to load git status", err);

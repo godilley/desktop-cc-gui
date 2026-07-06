@@ -53,64 +53,65 @@
  * - 悬停时颜色变深，给用户反馈
  */
 
-@property --sb-thumb-color {
-  syntax: '<color>';
-  initial-value: transparent;
-  inherits: false;
-}
-
-@property --sb-thumb-alpha {
-  syntax: '<number>';
-  initial-value: 0;
-  inherits: false;
-}
-
 /* Firefox 滚动条 */
-* {
+/*
+ * ponytail: intentionally NO transition on `*`. A previous version animated a
+ * registered @property (--sb-thumb-alpha) on every element for 2000ms on hover,
+ * driving a live color-mix() on `*::-webkit-scrollbar-thumb`. On WebKitGTK
+ * (Tauri's Linux webview) that forced app-wide style recalc on every animation
+ * tick after any hover — the cause of multi-second frame drops. The thumb now
+ * reveals instantly on hover via a plain color swap (no animation).
+ */
+/*
+ * ponytail: scrollbar styling is applied to the SCROLL ROOT only, not `*`.
+ * Universal `*` / `*:hover` scrollbar rules force WebKitGTK to re-match and
+ * re-resolve (incl. var()) for EVERY element on every style recalc — a large
+ * part of the multi-second `recalculate-styles` stalls on big projects. Scoping
+ * to `html`/`body` (+ an opt-in `.scrollable` class) removes that per-element
+ * cost. Thumb is always shown (no `:hover` reveal) to avoid a universal hover
+ * selector; it's subtle enough. Ceiling: nested overflow containers that want a
+ * styled scrollbar must add `.scrollable` (grep shows the main scroll areas are
+ * already scoped in their own CSS, e.g. status-panel/tool-blocks/git-history).
+ */
+html,
+body,
+.scrollable {
   scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-  --sb-thumb-color: var(--scrollbar-thumb);
-  --sb-thumb-alpha: 0;
-  transition-property: --sb-thumb-alpha;
-  transition-duration: 2000ms;
-  transition-timing-function: ease-out;
-  transition-delay: 120ms;
-}
-
-*:hover {
   scrollbar-color: var(--scrollbar-thumb) transparent;
-  --sb-thumb-alpha: 1;
-  transition-duration: 2000ms;
-  transition-timing-function: ease-in-out;
-  transition-delay: 0ms;
 }
 
 /* Webkit 浏览器滚动条 (Chrome, Safari, Edge, Tauri WebView) */
-*::-webkit-scrollbar {
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+.scrollable::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
-*::-webkit-scrollbar-track {
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track,
+.scrollable::-webkit-scrollbar-track {
   background: transparent;
 }
 
-*::-webkit-scrollbar-thumb {
-  background-color: color-mix(
-    in srgb,
-    var(--sb-thumb-color) calc(var(--sb-thumb-alpha) * 100%),
-    transparent
-  );
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb,
+.scrollable::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
   border-radius: 4px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 
-*:hover::-webkit-scrollbar-thumb:hover {
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover,
+.scrollable::-webkit-scrollbar-thumb:hover {
   background-color: var(--scrollbar-thumb-hover);
 }
 
-*::-webkit-scrollbar-corner {
+html::-webkit-scrollbar-corner,
+body::-webkit-scrollbar-corner,
+.scrollable::-webkit-scrollbar-corner {
   background: transparent;
 }
 

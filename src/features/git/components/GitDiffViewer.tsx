@@ -10,7 +10,11 @@ import { getGitFileFullDiff } from "../../../services/tauri";
 import { formatRelativeTime } from "../../../utils/time";
 import { Markdown } from "../../messages/components/Markdown";
 import { ImageDiffCard } from "./ImageDiffCard";
-import { DiffBlock } from "./DiffBlock";
+import {
+  DiffBlock,
+  type DiffLineExtensionRenderer,
+  type DiffLineSelectHandler,
+} from "./DiffBlock";
 import { parseDiff } from "../../../utils/diff";
 import { languageFromPath } from "../../../utils/syntax";
 import type {
@@ -151,6 +155,141 @@ const DiffCard = memo(function DiffCard({
     : null;
   const canCreateCodeAnnotation = Boolean(onCreateCodeAnnotation);
 
+  // Stable prop identities for the (now memoized) DiffBlock. Previously these
+  // were inline closures recreated every render, so a status poll or mount-time
+  // setState re-rendered every DiffBlock even though nothing they depend on
+  // changed. Each useCallback lists exactly the values it closes over, so it
+  // only churns when those actually change (e.g. annotationDraft while typing).
+  const handleLineSelect = useCallback<DiffLineSelectHandler>(
+    (_line, index, event) => {
+      if (event.shiftKey && selectedDiffRange) {
+        setSelectedDiffRange({
+          start: Math.min(selectedDiffRange.start, index),
+          end: Math.max(selectedDiffRange.start, index),
+        });
+        return;
+      }
+      setSelectedDiffRange({ start: index, end: index });
+    },
+    [selectedDiffRange],
+  );
+  const handleAnnotateLine = useCallback(
+    (lineRange: CodeAnnotationLineRange) =>
+      setAnnotationDraft({ lineRange, body: "" }),
+    [],
+  );
+  const renderLineExtension = useCallback<DiffLineExtensionRenderer>(
+    (line, _index, mode) => {
+      if (mode === "old") {
+        return null;
+      }
+      if (
+        (line.type !== "add" && line.type !== "context") ||
+        typeof line.newLine !== "number"
+      ) {
+        return null;
+      }
+      const lineAnnotations = visibleCodeAnnotations.filter(
+        (annotation) => annotation.lineRange.endLine === line.newLine,
+      );
+      const shouldRenderDraft =
+        annotationDraft?.lineRange.endLine === line.newLine;
+      if (lineAnnotations.length === 0 && !shouldRenderDraft) {
+        return null;
+      }
+      return (
+        <>
+          {lineAnnotations.map((annotation) => (
+            <div key={annotation.id} className="diff-annotation-marker" role="note">
+              <div className="diff-annotation-marker-head">
+                <span className="diff-annotation-title">
+                  <span className="codicon codicon-comment-discussion" aria-hidden />
+                  {t("files.annotationDraft")}
+                </span>
+                <span className="diff-annotation-marker-tools">
+                  <code>{formatCodeAnnotationLineRange(annotation.lineRange)}</code>
+                  {onRemoveCodeAnnotation ? (
+                    <button
+                      type="button"
+                      className="diff-annotation-remove"
+                      onClick={() => onRemoveCodeAnnotation(annotation.id)}
+                      title={t("files.annotationRemove")}
+                      aria-label={t("files.annotationRemove")}
+                    >
+                      <span className="codicon codicon-close" aria-hidden />
+                    </button>
+                  ) : null}
+                </span>
+              </div>
+              <p>{annotation.body}</p>
+            </div>
+          ))}
+          {shouldRenderDraft ? (
+            <div className="diff-annotation-draft diff-annotation-draft-inline" role="region" aria-label={t("files.annotationDraft")}>
+              <div className="diff-annotation-draft-head">
+                <span className="diff-annotation-title">
+                  <span className="codicon codicon-comment-discussion" aria-hidden />
+                  {t("files.annotationDraft")}
+                </span>
+                <code>
+                  {formatCodeAnnotationLineRange(annotationDraft.lineRange)}
+                </code>
+              </div>
+              <textarea
+                value={annotationDraft.body}
+                onChange={(event) => {
+                  const nextBody = event.currentTarget.value;
+                  setAnnotationDraft((current) =>
+                    current ? { ...current, body: nextBody } : current,
+                  );
+                }}
+                placeholder={t("files.annotationPlaceholder")}
+                autoFocus
+              />
+              <div className="diff-annotation-draft-actions">
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => setAnnotationDraft(null)}
+                >
+                  {t("common.cancel")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const body = annotationDraft.body.trim();
+                    if (!body) {
+                      return;
+                    }
+                    onCreateCodeAnnotation?.({
+                      path: normalizedEntryPath,
+                      lineRange: annotationDraft.lineRange,
+                      body,
+                      source: codeAnnotationSurface,
+                    });
+                    setAnnotationDraft(null);
+                  }}
+                  disabled={!annotationDraft.body.trim()}
+                >
+                  {t("files.annotationSubmit")}
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </>
+      );
+    },
+    [
+      annotationDraft,
+      codeAnnotationSurface,
+      normalizedEntryPath,
+      onCreateCodeAnnotation,
+      onRemoveCodeAnnotation,
+      t,
+      visibleCodeAnnotations,
+    ],
+  );
+
   return (
       <div
         data-diff-path={entry.path}
@@ -205,122 +344,12 @@ const DiffCard = memo(function DiffCard({
               showLineNumbers
               parsedLines={parsedLines}
               selectedRange={selectedDiffRange}
-              onLineSelect={canCreateCodeAnnotation ? (_line, index, event) => {
-                if (event.shiftKey && selectedDiffRange) {
-                  setSelectedDiffRange({
-                    start: Math.min(selectedDiffRange.start, index),
-                    end: Math.max(selectedDiffRange.start, index),
-                  });
-                  return;
-                }
-                setSelectedDiffRange({ start: index, end: index });
-              } : undefined}
+              onLineSelect={canCreateCodeAnnotation ? handleLineSelect : undefined}
               onAnnotateLine={
-                canCreateCodeAnnotation
-                  ? (lineRange) => setAnnotationDraft({ lineRange, body: "" })
-                  : undefined
+                canCreateCodeAnnotation ? handleAnnotateLine : undefined
               }
               annotationLabel={t("files.annotateForAi")}
-              renderLineExtension={(line, _index, mode) => {
-                if (mode === "old") {
-                  return null;
-                }
-                if (
-                  (line.type !== "add" && line.type !== "context") ||
-                  typeof line.newLine !== "number"
-                ) {
-                  return null;
-                }
-                const lineAnnotations = visibleCodeAnnotations.filter(
-                  (annotation) => annotation.lineRange.endLine === line.newLine,
-                );
-                const shouldRenderDraft =
-                  annotationDraft?.lineRange.endLine === line.newLine;
-                if (lineAnnotations.length === 0 && !shouldRenderDraft) {
-                  return null;
-                }
-                return (
-                  <>
-                    {lineAnnotations.map((annotation) => (
-                      <div key={annotation.id} className="diff-annotation-marker" role="note">
-                        <div className="diff-annotation-marker-head">
-                          <span className="diff-annotation-title">
-                            <span className="codicon codicon-comment-discussion" aria-hidden />
-                            {t("files.annotationDraft")}
-                          </span>
-                          <span className="diff-annotation-marker-tools">
-                            <code>{formatCodeAnnotationLineRange(annotation.lineRange)}</code>
-                            {onRemoveCodeAnnotation ? (
-                              <button
-                                type="button"
-                                className="diff-annotation-remove"
-                                onClick={() => onRemoveCodeAnnotation(annotation.id)}
-                                title={t("files.annotationRemove")}
-                                aria-label={t("files.annotationRemove")}
-                              >
-                                <span className="codicon codicon-close" aria-hidden />
-                              </button>
-                            ) : null}
-                          </span>
-                        </div>
-                        <p>{annotation.body}</p>
-                      </div>
-                    ))}
-                    {shouldRenderDraft ? (
-                      <div className="diff-annotation-draft diff-annotation-draft-inline" role="region" aria-label={t("files.annotationDraft")}>
-                        <div className="diff-annotation-draft-head">
-                          <span className="diff-annotation-title">
-                            <span className="codicon codicon-comment-discussion" aria-hidden />
-                            {t("files.annotationDraft")}
-                          </span>
-                          <code>
-                            {formatCodeAnnotationLineRange(annotationDraft.lineRange)}
-                          </code>
-                        </div>
-                        <textarea
-                          value={annotationDraft.body}
-                          onChange={(event) => {
-                            const nextBody = event.currentTarget.value;
-                            setAnnotationDraft((current) =>
-                              current ? { ...current, body: nextBody } : current,
-                            );
-                          }}
-                          placeholder={t("files.annotationPlaceholder")}
-                          autoFocus
-                        />
-                        <div className="diff-annotation-draft-actions">
-                          <button
-                            type="button"
-                            className="ghost"
-                            onClick={() => setAnnotationDraft(null)}
-                          >
-                            {t("common.cancel")}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const body = annotationDraft.body.trim();
-                              if (!body) {
-                                return;
-                              }
-                              onCreateCodeAnnotation?.({
-                                path: normalizedEntryPath,
-                                lineRange: annotationDraft.lineRange,
-                                body,
-                                source: codeAnnotationSurface,
-                              });
-                              setAnnotationDraft(null);
-                            }}
-                            disabled={!annotationDraft.body.trim()}
-                          >
-                            {t("files.annotationSubmit")}
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
-                  </>
-                );
-              }}
+              renderLineExtension={renderLineExtension}
             />
           </div>
         </div>

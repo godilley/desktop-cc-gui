@@ -742,8 +742,12 @@
   opacity: 1;
 }
 
-.file-tree-row-wrap:hover .file-tree-icon-cell:has(.file-tree-chevron) .file-tree-icon,
-.file-tree-row:focus-visible .file-tree-icon-cell:has(.file-tree-chevron) .file-tree-icon {
+/* Was `:has(.file-tree-chevron)` — replaced with a `.has-chevron` class set in
+   JSX. `:has()` is very expensive on WebKitGTK (re-evaluated per hover across the
+   whole tree); the class is O(1) to match. Same semantics: only folders that can
+   expand fade their type-icon out on hover to reveal the chevron. */
+.file-tree-row-wrap:hover .file-tree-icon-cell.has-chevron .file-tree-icon,
+.file-tree-row:focus-visible .file-tree-icon-cell.has-chevron .file-tree-icon {
   opacity: 0;
 }
 

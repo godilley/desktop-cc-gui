@@ -1,5 +1,5 @@
 import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { parseDiff, type ParsedDiffLine } from "../../../utils/diff";
 import { highlightLine } from "../../../utils/syntax";
 import type { CodeAnnotationLineRange } from "../../code-annotations/types";
@@ -24,7 +24,19 @@ type SplitDiffRow =
       right: IndexedDiffLine | null;
     };
 
-type DiffCellMode = "unified" | "old" | "new";
+export type DiffCellMode = "unified" | "old" | "new";
+
+export type DiffLineSelectHandler = (
+  line: ParsedDiffLine,
+  index: number,
+  event: MouseEvent<HTMLDivElement> | KeyboardEvent<HTMLDivElement>,
+) => void;
+
+export type DiffLineExtensionRenderer = (
+  line: ParsedDiffLine,
+  index: number,
+  mode: DiffCellMode,
+) => ReactNode;
 
 type DiffBlockProps = {
   diff: string;
@@ -32,20 +44,12 @@ type DiffBlockProps = {
   diffStyle?: DiffStyle;
   showHunkHeaders?: boolean;
   showLineNumbers?: boolean;
-  onLineSelect?: (
-    line: ParsedDiffLine,
-    index: number,
-    event: MouseEvent<HTMLDivElement> | KeyboardEvent<HTMLDivElement>,
-  ) => void;
+  onLineSelect?: DiffLineSelectHandler;
   selectedRange?: { start: number; end: number } | null;
   parsedLines?: ParsedDiffLine[] | null;
   onAnnotateLine?: (lineRange: CodeAnnotationLineRange) => void;
   annotationLabel?: string;
-  renderLineExtension?: (
-    line: ParsedDiffLine,
-    index: number,
-    mode: DiffCellMode,
-  ) => ReactNode;
+  renderLineExtension?: DiffLineExtensionRenderer;
 };
 
 function mapLineTypeAttribute(type: ParsedDiffLine["type"]) {
@@ -158,7 +162,7 @@ function buildSplitRows(
   return rows;
 }
 
-export function DiffBlock({
+function DiffBlockImpl({
   diff,
   language,
   diffStyle = "unified",
@@ -350,3 +354,10 @@ export function DiffBlock({
     </div>
   );
 }
+
+// Memoized: the git diff viewer re-renders on every 15s status poll and on
+// mount-time setState bursts. Without memo, every visible DiffBlock re-runs its
+// full render (parse + per-line highlight) each time. Callers must pass stable
+// prop identities (see the useCallback'd closures in GitDiffViewer) for this to
+// bite — an inline closure per render would defeat it.
+export const DiffBlock = memo(DiffBlockImpl);

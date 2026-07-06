@@ -771,6 +771,14 @@ body[data-panel-resizing="true"] .main {
   box-sizing: border-box;
 }
 
+/* Escape hatch to match .tabbar: WebKitGTK re-blurs the entire backdrop region
+   behind this sticky bar on every repaint of the content behind it — very
+   expensive on large projects. `Reduced transparency` now disables it here too
+   (previously only .tabbar honored the toggle). */
+.app.reduced-transparency .main-topbar {
+  backdrop-filter: none;
+}
+
 .app.layout-desktop.layout-swapped .main:not(.settings-open):not(.spec-focus) .main-topbar {
   grid-column: 2;
 }

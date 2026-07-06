@@ -245,7 +245,10 @@ function FileTreeNodeRow({
         }}
         onDragEnd={handleDragEnd}
       >
-        <span className="file-tree-icon-cell" aria-hidden>
+        <span
+          className={`file-tree-icon-cell${row.isFolder && row.canExpand ? " has-chevron" : ""}`}
+          aria-hidden
+        >
           <span
             className="file-tree-icon"
             dangerouslySetInnerHTML={{

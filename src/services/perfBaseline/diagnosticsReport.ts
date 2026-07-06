@@ -108,5 +108,23 @@ export function buildDiagnosticsReportText(): string {
     return `${header}(no performance diagnostics recorded — 打开设置里的「性能诊断采集」并复现卡顿后再导出)\n`;
   }
 
-  return `${header}${recent.map(formatEntry).join("\n")}\n`;
+  // Dedicated "all frame drops" section: the tail above is capped at
+  // REPORT_MAX_ENTRIES and interleaves other labels. This dumps EVERY recorded
+  // frame drop (real ones + suspend/resume) with its full payload — including
+  // `topRenders` attribution — sorted worst-first so the heaviest stalls are at
+  // the top. NOTE: the react-scan "Update DOM vs JS-Hooks" self-time split is
+  // computed inside the react-scan toolbar and is not available to app code, so
+  // it cannot be included here.
+  const worstFirst = [...allFrameDrops].sort(
+    (a, b) =>
+      (readNumber(b.payload, "deltaMs") ?? 0) -
+      (readNumber(a.payload, "deltaMs") ?? 0),
+  );
+  const allDropsSection = [
+    "",
+    `--- ALL FRAME DROPS (${worstFirst.length}, worst first) ---`,
+    ...worstFirst.map(formatEntry),
+  ].join("\n");
+
+  return `${header}${recent.map(formatEntry).join("\n")}\n${allDropsSection}\n`;
 }

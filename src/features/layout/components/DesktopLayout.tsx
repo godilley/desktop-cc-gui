@@ -403,7 +403,13 @@ export function DesktopLayout({
                     aria-hidden={centerMode !== "diff"}
                     ref={diffLayerRef}
                   >
-                    {gitDiffViewerNode}
+                    {/* Only mount the diff viewer when actually shown. It was
+                        always-mounted (CSS-hidden), so on a fresh chat it
+                        eager-loaded the WHOLE working-tree diff DOM — which on a
+                        large/dirty project (e.g. ManaUtils) made every WebKitGTK
+                        style recalc re-resolve that hidden subtree, the main jank
+                        source. Re-mounts (and reloads) on switch to the diff tab. */}
+                    {centerMode === "diff" ? gitDiffViewerNode : null}
                   </div>
                   <div
                     className={`content-layer content-layer--editor ${
