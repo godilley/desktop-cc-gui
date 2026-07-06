@@ -1756,8 +1756,19 @@ export const Messages = memo(function Messages({
         anchorUpdateRafRef.current = null;
         const anchorStartedAt =
           typeof performance === "undefined" ? 0 : performance.now();
-        const nextActiveAnchor =
-          computeActiveAnchor() ?? messageAnchors[messageAnchors.length - 1]?.id ?? null;
+        // Clamp the extremes: the final viewport-worth of messages can't be
+        // scrolled to the centre probe (a short last message never crosses it),
+        // so pin the active anchor to the last/first anchor at the very
+        // bottom/top; the centre-probe scroll-spy handles everything between.
+        const container = containerRef.current;
+        const atBottom =
+          !!container && isMessagesScrollNearBottom(container, SCROLL_THRESHOLD_PX);
+        const atTop = !!container && container.scrollTop <= SCROLL_THRESHOLD_PX;
+        const nextActiveAnchor = atBottom
+          ? messageAnchors[messageAnchors.length - 1]?.id ?? null
+          : atTop
+            ? messageAnchors[0]?.id ?? null
+            : computeActiveAnchor() ?? messageAnchors[messageAnchors.length - 1]?.id ?? null;
         const elapsedMs =
           typeof performance === "undefined"
             ? 0

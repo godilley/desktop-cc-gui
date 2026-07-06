@@ -178,18 +178,29 @@ export function resolveActiveMessageAnchor(
   if (!container) {
     return null;
   }
-  const viewportAnchorY =
-    container.scrollTop + Math.min(96, container.clientHeight * 0.32);
-  let bestId: string | null = null;
-  let bestDistance = Number.POSITIVE_INFINITY;
+  // Probe at the viewport CENTRE, not a shallow top offset. The active anchor is
+  // the last user message whose top has scrolled above the middle of the screen
+  // (scroll-spy). A centre probe stays reachable for the whole conversation tail;
+  // a shallow top probe does not — you hit max scroll before the final messages
+  // can reach it, which is why the last few never used to highlight.
+  const viewportProbeY = container.scrollTop + container.clientHeight / 2;
+  let activeId: string | null = null;
+  let activeTop = Number.NEGATIVE_INFINITY;
+  let firstId: string | null = null;
+  let firstTop = Number.POSITIVE_INFINITY;
   for (const [messageId, node] of messageNodeById) {
-    const distance = Math.abs(node.offsetTop - viewportAnchorY);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestId = messageId;
+    const top = node.offsetTop;
+    if (top <= viewportProbeY && top > activeTop) {
+      activeTop = top;
+      activeId = messageId;
+    }
+    if (top < firstTop) {
+      firstTop = top;
+      firstId = messageId;
     }
   }
-  return bestId;
+  // Scrolled above the first anchor's midpoint → the first anchor is active.
+  return activeId ?? firstId;
 }
 
 export function resolveVisibleMessageItems(options: {
