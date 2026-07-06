@@ -1192,22 +1192,16 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     if (!reset.shouldResetScroll && !reset.shouldMeasure) {
       return undefined;
     }
-    // 历史会话应默认落在底部（最新消息处），而不是顶部。
-    const pinScrollToBottom =
-      scrollElement && reset.shouldResetScroll
-        ? () => {
-            scrollElement.scrollTo({ top: scrollElement.scrollHeight, behavior: "auto" });
-          }
-        : null;
-    pinScrollToBottom?.();
+    // Remeasure only: swapping capped row estimates for real heights is the
+    // virtualizer's legitimate job. All scroll pinning — thread-open landing and
+    // the "reply ends" re-pin — is now owned by useMessagesScrollOwner, so this
+    // effect must never write scrollTop (a second owner would fight the hook).
     if (typeof window === "undefined") {
       remeasureTimelineVirtualizerRows(timelineVirtualizer);
       return undefined;
     }
     const raf = window.requestAnimationFrame(() => {
       remeasureTimelineVirtualizerRows(timelineVirtualizer);
-      // 重测把估高替换为真实行高、总高度随之变化，需再钉一次底部。
-      pinScrollToBottom?.();
     });
     return () => {
       window.cancelAnimationFrame(raf);

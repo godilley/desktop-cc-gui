@@ -17,6 +17,17 @@
   contain-intrinsic-block-size: auto;
 }
 
+/* The (0,5,0) shell rule in messages.part1-shell.css forces content-visibility:auto
+   on every direct child of .messages-full during the non-virtualized streaming
+   flow, which outranks the (0,3,0) rule above and would render-skip the streaming
+   tail while it scrolls offscreen. Re-assert visible at matching (0,5,0)
+   specificity; this sheet loads after the shell sheet, so source order breaks the
+   tie in our favor. */
+.messages-full[data-timeline-virtualized="false"]
+  > .message.assistant.is-live-streaming {
+  content-visibility: visible;
+}
+
 /* claude-render-safe：仅让「正在流式的那一行」保持 content-visibility:visible（与上方
    .is-live-streaming 规则一致），已完成的屏外历史行恢复基础规则的 content-visibility:auto，
    跳过屏外渲染/绘制。原 blanket 规则（对全部 .message 强制 visible）会让 Claude 流式期整条

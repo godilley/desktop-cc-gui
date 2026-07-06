@@ -34,6 +34,7 @@ import {
   writeLocalBooleanFlag,
 } from "../constants/liveCanvasControls";
 import { useFileLinkOpener } from "../hooks/useFileLinkOpener";
+import { useMessagesScrollOwner } from "../hooks/useMessagesScrollOwner";
 import { RendererContextMenu } from "../../../components/ui/RendererContextMenu";
 import { appendRendererDiagnostic } from "../../../services/rendererDiagnostics";
 import {
@@ -87,7 +88,6 @@ import {
   MESSAGES_SLOW_RENDER_WARN_MS,
   resolveRenderableItems,
   resolveWorkingActivityLabel,
-  SCROLL_THRESHOLD_PX,
   shouldDisplayWorkingActivityLabel,
   shouldHideClaudeReasoningModule,
   isClaudeHistoryTranscriptHeavy,
@@ -100,12 +100,12 @@ import {
   buildMessagesScrollKey,
   findItemById,
   findLatestAssistantTextLength,
-  isMessagesScrollNearBottom,
   mergeReadableRecoveryItems,
   resolveActiveUserInputRequest,
   resolveActiveMessageAnchor,
   resolveCollapsedTimelineItems,
   resolveVisibleMessageItems,
+  type MessageActionTargets,
   type PreservedReadableWindow,
 } from "./messagesViewModel";
 import {
@@ -165,6 +165,40 @@ function areStringSetsEqual(left: ReadonlySet<string>, right: ReadonlySet<string
     }
   }
   return true;
+}
+
+// 流式期间每个 token 都会替换 items 数组引用,但通常只有最后一条正在流式输出的
+// assistant/user "message" 条目发生了文本变化,其余条目引用保持不变。此时
+// dedupeExitPlanItemsKeepFirst / buildMessageActionTargets 的计算结果必然与上一次
+// 完全相同(两者都只关心 tool 条目身份或 role/isFinal 边界,不关心文本内容本身),
+// 可以安全复用缓存结果,避免对整段历史重新扫描。
+// 一旦出现条目增删、非 message 类型条目变化,或 role/isFinal 发生翻转,则回退到全量重算,
+// 保证 idle/展开态下覆盖全部历史的正确性不受影响。
+function isTrailingMessageTextOnlyUpdate(
+  prev: ConversationItem[],
+  next: ConversationItem[],
+): boolean {
+  if (prev.length === 0 || prev.length !== next.length) {
+    return false;
+  }
+  const lastIndex = prev.length - 1;
+  for (let index = 0; index < lastIndex; index += 1) {
+    if (prev[index] !== next[index]) {
+      return false;
+    }
+  }
+  const prevLast = prev[lastIndex];
+  const nextLast = next[lastIndex];
+  if (prevLast === nextLast) {
+    return true;
+  }
+  return (
+    prevLast.kind === "message" &&
+    nextLast.kind === "message" &&
+    prevLast.id === nextLast.id &&
+    prevLast.role === nextLast.role &&
+    prevLast.isFinal === nextLast.isFinal
+  );
 }
 
 export const Messages = memo(function Messages({
@@ -385,8 +419,6 @@ export const Messages = memo(function Messages({
   const messageNodeByIdRef = useRef<Map<string, HTMLDivElement>>(new Map());
   const agentTaskNodeByTaskIdRef = useRef<Map<string, HTMLDivElement>>(new Map());
   const agentTaskNodeByToolUseIdRef = useRef<Map<string, HTMLDivElement>>(new Map());
-  const autoScrollRef = useRef(true);
-  const initialBottomPinScopeRef = useRef<string | null>(null);
   const anchorUpdateRafRef = useRef<number | null>(null);
   const lastRenderSnapshotRef = useRef<LastRenderSnapshot | null>(null);
   const preservedReadableWindowRef = useRef<PreservedReadableWindow>({
@@ -489,16 +521,44 @@ export const Messages = memo(function Messages({
   const latestItemsRef = useRef(items);
   latestItemsRef.current = items;
   const [finalizingAssistantMessageId, setFinalizingAssistantMessageId] = useState<string | null>(null);
+  const exitPlanDedupeCacheRef = useRef<{
+    baseItems: ConversationItem[];
+    result: ConversationItem[];
+  } | null>(null);
   const effectiveItems = useMemo(() => {
     const baseItems = isSelectionFrozen
       ? frozenItemsRef.current ?? items
       : items;
-    return dedupeExitPlanItemsKeepFirst(baseItems);
+    const cache = exitPlanDedupeCacheRef.current;
+    if (cache && isTrailingMessageTextOnlyUpdate(cache.baseItems, baseItems)) {
+      // dedupe 只会移除 exit-plan 工具条目,末尾的 "message" 条目必然原样透传,
+      // 因此只需把结果数组的最后一项替换为最新引用,无需重新扫描整段历史。
+      const nextLast = baseItems[baseItems.length - 1];
+      const result =
+        cache.result[cache.result.length - 1] === nextLast
+          ? cache.result
+          : [...cache.result.slice(0, -1), nextLast];
+      exitPlanDedupeCacheRef.current = { baseItems, result };
+      return result;
+    }
+    const result = dedupeExitPlanItemsKeepFirst(baseItems);
+    exitPlanDedupeCacheRef.current = { baseItems, result };
+    return result;
   }, [isSelectionFrozen, items]);
-  const messageActionTargets = useMemo(
-    () => buildMessageActionTargets(effectiveItems),
-    [effectiveItems],
-  );
+  const messageActionTargetsCacheRef = useRef<{
+    baseItems: ConversationItem[];
+    result: MessageActionTargets;
+  } | null>(null);
+  const messageActionTargets = useMemo(() => {
+    const cache = messageActionTargetsCacheRef.current;
+    if (cache && isTrailingMessageTextOnlyUpdate(cache.baseItems, effectiveItems)) {
+      messageActionTargetsCacheRef.current = { baseItems: effectiveItems, result: cache.result };
+      return cache.result;
+    }
+    const result = buildMessageActionTargets(effectiveItems);
+    messageActionTargetsCacheRef.current = { baseItems: effectiveItems, result };
+    return result;
+  }, [effectiveItems]);
   const liveTailWorkingSet = useMemo(
     () =>
       buildLiveTailWorkingSet(effectiveItems, {
@@ -577,29 +637,9 @@ export const Messages = memo(function Messages({
     onOpenWorkspaceFile,
   );
 
-  const isNearBottom = useCallback(
-    (node: HTMLDivElement) => isMessagesScrollNearBottom(node, SCROLL_THRESHOLD_PX),
-    [],
-  );
-
   const computeActiveAnchor = useCallback(() => {
     return resolveActiveMessageAnchor(containerRef.current, messageNodeByIdRef.current);
   }, []);
-
-  const requestAutoScroll = useCallback(() => {
-    if (!liveAutoFollowEnabled || !isWorking) {
-      return;
-    }
-    // Respect a manual scroll-up: never yank the user back to the bottom.
-    if (!autoScrollRef.current) {
-      return;
-    }
-    if (!bottomRef.current) {
-      return;
-    }
-    // Always use instant for programmatic scroll requests to avoid blocking input
-    bottomRef.current.scrollIntoView({ behavior: "instant", block: "end" });
-  }, [isWorking, liveAutoFollowEnabled]);
 
   const scrollToAgentTaskCard = useCallback((request: AgentTaskScrollRequest | null) => {
     if (!request) {
@@ -620,7 +660,9 @@ export const Messages = memo(function Messages({
     const nodeRect = node.getBoundingClientRect();
     const targetTop =
       container.scrollTop + (nodeRect.top - containerRect.top) - container.clientHeight * 0.22;
-    autoScrollRef.current = false;
+    // scrollOwner is stable (memoized); referenced in-body only, so the empty
+    // deps stay valid despite the hook being declared later in the component.
+    scrollOwner.setStick(false);
     container.scrollTo({
       top: Math.max(0, targetTop),
       behavior: "smooth",
@@ -641,7 +683,6 @@ export const Messages = memo(function Messages({
       agentTaskNodeCount:
         agentTaskNodeByTaskIdRef.current.size + agentTaskNodeByToolUseIdRef.current.size,
     };
-    autoScrollRef.current = true;
     setExpandedItems((previous) => (previous.size === 0 ? previous : new Set()));
     setIsSelectionFrozen(false);
     frozenItemsRef.current = null;
@@ -774,13 +815,6 @@ export const Messages = memo(function Messages({
       window.removeEventListener("storage", handleStorage);
     };
   }, []);
-  useEffect(() => {
-    if (!liveAutoFollowEnabled || !isWorking) {
-      return;
-    }
-    autoScrollRef.current = true;
-    requestAutoScroll();
-  }, [isWorking, liveAutoFollowEnabled, requestAutoScroll]);
   useEffect(() => {
     const currentFirstId = effectiveItems[0]?.id ?? null;
     if (currentFirstId !== firstItemIdRef.current) {
@@ -1554,6 +1588,20 @@ export const Messages = memo(function Messages({
     },
     [isThinking, latestReasoningId, renderSourceItems],
   );
+  const scrollOwner = useMessagesScrollOwner({
+    containerRef,
+    bottomRef,
+    scopeKey: renderScopeKey,
+    isThinking,
+    isWorking,
+    isAssistantFinalizing,
+    liveAutoFollowEnabled,
+    isHistoryLoading,
+    hasPendingJump: Boolean(pendingJumpMessageId),
+    renderedItemCount: timelinePresentationItems.length,
+    omittedBeforeWorkingSetCount: liveTailWorkingSet.omittedBeforeWorkingSetCount,
+    timelinePresentationItems,
+  });
   useEffect(() => {
     if (!threadId || !isThinking) {
       lastStreamSurfaceDiagnosticKeyRef.current = null;
@@ -1732,7 +1780,7 @@ export const Messages = memo(function Messages({
     }
     pendingHistoryExpansionModeRef.current = null;
     if (pendingExpansionMode === "manual") {
-      autoScrollRef.current = false;
+      scrollOwner.setStick(false);
       container.scrollTop = 0;
     }
     scheduleAnchorUpdate("sync");
@@ -1742,19 +1790,11 @@ export const Messages = memo(function Messages({
     showAllHistoryItems,
   ]);
   const updateAutoScroll = useCallback(() => {
-    const container = containerRef.current;
-    if (!container) {
-      return;
-    }
-    // Auto-follow tracks the user's real scroll position: stick to the bottom
-    // only while the viewport is actually near the bottom. Scrolling up cancels
-    // the follow; scrolling back to the bottom re-enables it.
-    autoScrollRef.current = isNearBottom(container);
+    // The scroll owner re-reads near-bottom state and owns stick-to-bottom;
+    // anchor scheduling stays here in Messages (not the scroll owner).
+    scrollOwner.notifyUserScroll();
     scheduleAnchorUpdate("scroll");
-  }, [
-    isNearBottom,
-    scheduleAnchorUpdate,
-  ]);
+  }, [scheduleAnchorUpdate, scrollOwner]);
   const clearTransientUiState = useCallback(() => {
     if (copyTimeoutRef.current) {
       window.clearTimeout(copyTimeoutRef.current);
@@ -1972,93 +2012,6 @@ export const Messages = memo(function Messages({
     [],
   );
 
-  useEffect(() => {
-    if (!bottomRef.current) {
-      return undefined;
-    }
-    if (!liveAutoFollowEnabled || (!isWorking && !isAssistantFinalizing)) {
-      return undefined;
-    }
-    const container = containerRef.current;
-    // Follow new content only when the user is parked at the bottom. A manual
-    // scroll up flips autoScrollRef off (see updateAutoScroll) and stops the
-    // pull-to-bottom; scrolling back down re-arms it.
-    const shouldScroll =
-      autoScrollRef.current || (container ? isNearBottom(container) : true);
-    if (!shouldScroll) {
-      return undefined;
-    }
-    let raf = 0;
-    const target = bottomRef.current;
-    // Use instant scroll during streaming to avoid blocking the main thread
-    // with smooth-scroll animations that compete with keyboard input events.
-    const scrollBehavior =
-      isThinking || isAssistantFinalizing ? "instant" as const : "smooth" as const;
-    raf = window.requestAnimationFrame(() => {
-      target.scrollIntoView({ behavior: scrollBehavior, block: "end" });
-    });
-    return () => {
-      if (raf) {
-        window.cancelAnimationFrame(raf);
-      }
-    };
-  }, [
-    isAssistantFinalizing,
-    isNearBottom,
-    isThinking,
-    isWorking,
-    liveAutoFollowEnabled,
-    scrollKey,
-  ]);
-
-  // Opening a thread should land the viewport at the bottom (latest messages),
-  // matching chat conventions. Runs once per workspace+thread once history
-  // content is actually rendered; live auto-follow and anchor jumps own all
-  // subsequent scrolling.
-  useLayoutEffect(() => {
-    const scope = `${workspaceId ?? ""} ${threadId}`;
-    if (initialBottomPinScopeRef.current === scope) {
-      return undefined;
-    }
-    if (isHistoryLoading || timelinePresentationItems.length === 0) {
-      return undefined;
-    }
-    if (pendingJumpMessageId) {
-      initialBottomPinScopeRef.current = scope;
-      return undefined;
-    }
-    if (isWorking || isThinking) {
-      return undefined;
-    }
-    const target = bottomRef.current;
-    if (!target) {
-      return undefined;
-    }
-    initialBottomPinScopeRef.current = scope;
-    autoScrollRef.current = true;
-    target.scrollIntoView({ behavior: "instant", block: "end" });
-    if (typeof window === "undefined") {
-      return undefined;
-    }
-    // ponytail: virtualized rows start on estimated heights, so re-pin once on
-    // the next frame; if late row measurements still drift the viewport, the
-    // upgrade path is re-pinning until the scroll height stabilizes.
-    const raf = window.requestAnimationFrame(() => {
-      bottomRef.current?.scrollIntoView({ behavior: "instant", block: "end" });
-    });
-    return () => {
-      window.cancelAnimationFrame(raf);
-    };
-  }, [
-    isHistoryLoading,
-    isThinking,
-    isWorking,
-    pendingJumpMessageId,
-    threadId,
-    timelinePresentationItems,
-    workspaceId,
-  ]);
-
   const groupedEntries = useMemo(
     () => groupToolItems(timelinePresentationItems),
     [timelinePresentationItems],
@@ -2165,7 +2118,7 @@ export const Messages = memo(function Messages({
     const nodeRect = node.getBoundingClientRect();
     const targetTop =
       container.scrollTop + (nodeRect.top - containerRect.top) - container.clientHeight * 0.28;
-    autoScrollRef.current = false;
+    scrollOwner.setStick(false);
     container.scrollTo({
       top: Math.max(0, targetTop),
       behavior: "smooth",
@@ -2233,7 +2186,7 @@ export const Messages = memo(function Messages({
         onScrollToAnchor={requestScrollToAnchor}
       />
       <div
-        className="messages"
+        className="messages scrollable"
         ref={containerRef}
         onScroll={updateAutoScroll}
       >
@@ -2320,7 +2273,7 @@ export const Messages = memo(function Messages({
           proxyEnabled={proxyEnabled}
           proxyUrl={proxyUrl}
           reasoningMetaById={reasoningMetaById}
-          requestAutoScroll={requestAutoScroll}
+          requestAutoScroll={scrollOwner.requestFollow}
           selectedExitPlanExecutionByItemKey={selectedExitPlanExecutionByItemKey}
           scrollElementRef={containerRef}
           showFileLinkMenu={showFileLinkMenu}

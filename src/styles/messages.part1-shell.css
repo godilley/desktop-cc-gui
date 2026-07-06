@@ -127,6 +127,9 @@
 
 .messages {
   overflow-y: auto;
+  /* Let the browser's scroll anchoring hold the viewport when history re-mounts
+     above it (belt-and-suspenders for the JS restore in useMessagesScrollOwner). */
+  overflow-anchor: auto;
   -webkit-app-region: no-drag;
   flex: 1;
   min-height: 0;
@@ -322,6 +325,9 @@
   display: flex;
   justify-content: center;
   padding-bottom: 4px;
+  /* Sticky slot: exclude from scroll anchoring so the browser never anchors the
+     viewport onto this pinned element instead of the transcript flow. */
+  overflow-anchor: none;
 }
 
 .messages-inline-user-input-slot {
@@ -329,6 +335,8 @@
   display: flex;
   justify-content: center;
   width: 100%;
+  /* Sticky slot: exclude from scroll anchoring (see approval slot above). */
+  overflow-anchor: none;
 }
 
 .app.canvas-width-wide .messages-full {
