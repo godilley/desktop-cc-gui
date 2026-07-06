@@ -66,7 +66,7 @@ export function MessagesViewportJumpControls({
           disabled={!canJumpToStart}
           data-testid="messages-nav-jump-start"
         >
-          <ChevronUp size={16} aria-hidden />
+          <ChevronUp size={20} aria-hidden />
         </button>
         <button
           type="button"
@@ -77,7 +77,7 @@ export function MessagesViewportJumpControls({
           disabled={!canPrevMessage}
           data-testid="messages-nav-prev"
         >
-          <ChevronUp size={16} aria-hidden />
+          <ChevronUp size={20} aria-hidden />
         </button>
       </div>
 
@@ -95,7 +95,7 @@ export function MessagesViewportJumpControls({
           disabled={!canJumpToLatest}
           data-testid="messages-nav-jump-latest"
         >
-          <ChevronDown size={16} aria-hidden />
+          <ChevronDown size={20} aria-hidden />
         </button>
         <button
           type="button"
@@ -106,7 +106,7 @@ export function MessagesViewportJumpControls({
           disabled={!canNextMessage}
           data-testid="messages-nav-next"
         >
-          <ChevronDown size={16} aria-hidden />
+          <ChevronDown size={20} aria-hidden />
         </button>
       </div>
     </div>

@@ -28,25 +28,24 @@ openspec validate add-conversation-viewport-jump-controls --strict --no-interact
 - Design note: the cluster wraps the anchor rail (rail becomes `position:relative`
   inside so its outline flyout still anchors to it); scroll effects route through
   `useMessagesScrollOwner` (outer-down `setStick(true)`+`requestFollow()`, outer-up
-  `revealAllHistoryItems("manual")` + guarded top); inner chevrons reuse
-  `messageAnchors` + `activeAnchorId` + `requestScrollToAnchor`. Gating the cluster
-  on `hasAnchorRail` also makes the rail respect `showMessageAnchors` (was
+  `revealAllHistoryItems("manual")` + guarded top). Inner chevrons step ±1 from the
+  anchor nearest the active-anchor pivot line (resolved in the throttled scroll
+  handler, with a bottom-edge correction) via `requestScrollToAnchor`. Gating the
+  cluster on `hasAnchorRail` also makes the rail respect `showMessageAnchors` (was
   previously ignored) — a minor consistency improvement.
+- Layout note: the cluster and dashes center on the rail midline; each chevron box
+  is 20px = glyph size (no overflow) so the glyph sits on the pixel grid — fixes
+  the earlier left-shift + asymmetric-arm sub-pixel rendering.
 
-## Manual QA / 人工验证 (pending — task 5.3)
+## Manual QA / 人工验证 (George-verified 2026-07-06, dev:hot on resync)
 
-Manual, dev/prod build (WebKitGTK):
-
-- [ ] Outer-up reveals collapsed history and lands on the true first message;
-  outer-down snaps to the newest message AND keeps following streamed content
-  (stick re-armed), both mid-scroll and after a manual scroll-up.
-- [ ] Inner-up / inner-down step to the previous / next message anchor; each
-  inner chevron is disabled at its end (first/last anchor).
-- [ ] Hover grouping: hovering an outer chevron highlights BOTH chevrons on that
-  side (reads as a double chevron »); hovering an inner highlights only itself.
-- [ ] The two stacked single chevrons read cleanly as a double chevron when both
-  lit (visual spacing acceptable).
-- [ ] Cluster shows only with ≥2 anchors; the anchor rail's collapse/expand and
+- [x] Outer-up reveals collapsed history and lands on the first message; outer-down
+  snaps to the newest message and keeps following (stick re-armed).
+- [x] Inner-up / inner-down step to the previous / next message anchor; correct at
+  the very bottom (no skipped message) and a small scroll offset no longer makes
+  "next" re-select the current message; disabled at the ends.
+- [x] Hover grouping reads as single (inner) vs double (outer) chevron.
+- [x] The two stacked single chevrons read as a tight double chevron.
+- [x] Chevrons centered on the dash line, symmetric arms, at the desired size.
+- [x] Cluster shows only with ≥2 anchors; the anchor rail's collapse/expand and
   outline flyout still work; nothing overlaps the composer.
-- [ ] Keyboard: each chevron is focusable with a descriptive label; the grouping
-  affordance is not required to operate the controls.

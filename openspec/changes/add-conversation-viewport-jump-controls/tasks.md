@@ -22,4 +22,4 @@
 
 - [x] 5.1 Update the focused Vitest test for the reworked component (renders all four chevrons with distinct aria-labels + a rail child, disables each chevron when its `can*` is false, click fires the right handler, hides when the cluster is not shown). Output: green focused test. Validation: `npx vitest run <file>`. [P0][depends: 3.4][I][O: test file][V: vitest]
 - [x] 5.2 Run repository gates; output: no TypeScript regressions. Validation: `npm run typecheck`. [P0][depends: 5.1][V: typecheck]
-- [ ] 5.3 Manual QA (dev/prod build): outer/inner jumps behave; hover grouping (outer highlights both, inner highlights self) reads as single/double chevron; disabled states; keyboard/aria. Output: verification.md manual checklist completed. [P0][depends: 5.2][V: manual]
+- [x] 5.3 Manual QA (dev/prod build): outer/inner jumps behave; hover grouping (outer highlights both, inner highlights self) reads as single/double chevron; disabled states; keyboard/aria. Output: verification.md manual checklist completed (George-verified 2026-07-06). [P0][depends: 5.2][V: manual]

@@ -485,12 +485,21 @@ export const Messages = memo(function Messages({
     DEFAULT_RENDER_LOOP_GUARD_BUDGET,
   );
   const [showAllHistoryItems, setShowAllHistoryItems] = useState(false);
-  // Presence gating for the viewport-jump controls. Derived from live scroll
-  // geometry in updateAutoScroll (the existing throttled scroll path) so we
-  // never measure on every streamed token; only re-renders when a boolean flips.
-  const [viewportJump, setViewportJump] = useState({
+  // Presence gating + prev/next targets for the viewport-jump controls. Derived
+  // from live scroll geometry in updateAutoScroll (the existing throttled scroll
+  // path) so we never measure on every streamed token; only re-renders when a
+  // value actually changes. prev/next are resolved from the real scroll position
+  // (not the fuzzy near-top active anchor) so stepping is correct at the ends.
+  const [viewportJump, setViewportJump] = useState<{
+    canJumpToStart: boolean;
+    canJumpToLatest: boolean;
+    prevAnchorId: string | null;
+    nextAnchorId: string | null;
+  }>({
     canJumpToStart: false,
     canJumpToLatest: false,
+    prevAnchorId: null,
+    nextAnchorId: null,
   });
   const [historyExpansionMode, setHistoryExpansionMode] =
     useState<MessagesHistoryExpansionMode>(null);
@@ -1813,14 +1822,46 @@ export const Messages = memo(function Messages({
       const canJumpToStart = scrollable && container.scrollTop > SCROLL_THRESHOLD_PX;
       const canJumpToLatest =
         scrollable && !isMessagesScrollNearBottom(container, SCROLL_THRESHOLD_PX);
+      // "Current" anchor = the one nearest the active-anchor pivot line (same
+      // reference the rail uses), then step +/-1. Choosing the current by nearest
+      // pivot (not a raw scrollTop threshold) means a small scroll offset never
+      // makes "next" re-select the current message. A bottom-edge correction makes
+      // the last message reachable (the pivot never reaches it at the very bottom).
+      const pivot = container.scrollTop + Math.min(96, container.clientHeight * 0.32);
+      const nodes = messageNodeByIdRef.current;
+      let currentIndex = -1;
+      let bestDistance = Number.POSITIVE_INFINITY;
+      messageAnchors.forEach((anchor, index) => {
+        const top = nodes.get(anchor.id)?.offsetTop;
+        if (typeof top !== "number") {
+          return;
+        }
+        const distance = Math.abs(top - pivot);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          currentIndex = index;
+        }
+      });
+      const atBottom = isMessagesScrollNearBottom(container, SCROLL_THRESHOLD_PX);
+      if (atBottom && messageAnchors.length > 0) {
+        currentIndex = messageAnchors.length - 1;
+      }
+      const prevAnchorId =
+        currentIndex > 0 ? messageAnchors[currentIndex - 1].id : null;
+      const nextAnchorId =
+        !atBottom && currentIndex >= 0 && currentIndex < messageAnchors.length - 1
+          ? messageAnchors[currentIndex + 1].id
+          : null;
       setViewportJump((prev) =>
         prev.canJumpToStart === canJumpToStart &&
-        prev.canJumpToLatest === canJumpToLatest
+        prev.canJumpToLatest === canJumpToLatest &&
+        prev.prevAnchorId === prevAnchorId &&
+        prev.nextAnchorId === nextAnchorId
           ? prev
-          : { canJumpToStart, canJumpToLatest },
+          : { canJumpToStart, canJumpToLatest, prevAnchorId, nextAnchorId },
       );
     }
-  }, [scheduleAnchorUpdate, scrollOwner]);
+  }, [messageAnchors, scheduleAnchorUpdate, scrollOwner]);
   const handleJumpToLatest = useCallback(() => {
     // Re-arm stick BEFORE scrolling so the live-follow effect keeps tailing
     // subsequently streamed content instead of the user's old scrolled-up spot.
@@ -2186,36 +2227,23 @@ export const Messages = memo(function Messages({
     }
   }, [revealAllHistoryItems, scrollToAnchor, showAllHistoryItems]);
 
-  // Inner chevrons step through the user-message anchors (the rail's points),
-  // reusing the same jump primitive the rail uses. Disabled only at the extreme
-  // anchor; when no anchor is active (index -1), prev enters from the last and
-  // next from the first.
-  const activeAnchorIndex = messageAnchors.findIndex(
-    (anchor) => anchor.id === activeAnchorId,
-  );
-  const canPrevMessage = messageAnchors.length > 1 && activeAnchorIndex !== 0;
-  const canNextMessage =
-    messageAnchors.length > 1 && activeAnchorIndex !== messageAnchors.length - 1;
+  // Inner chevrons step to the previous / next user-message anchor relative to the
+  // real scroll position (targets resolved in updateAutoScroll). Disabled when
+  // there is no anchor in that direction, so stepping is correct at both ends —
+  // fixes "up" at the very bottom skipping the last message.
+  const { prevAnchorId, nextAnchorId } = viewportJump;
+  const canPrevMessage = prevAnchorId !== null;
+  const canNextMessage = nextAnchorId !== null;
   const handlePrevMessage = useCallback(() => {
-    if (messageAnchors.length === 0) {
-      return;
+    if (prevAnchorId) {
+      requestScrollToAnchor(prevAnchorId);
     }
-    const targetIndex =
-      activeAnchorIndex === -1
-        ? messageAnchors.length - 1
-        : Math.max(0, activeAnchorIndex - 1);
-    requestScrollToAnchor(messageAnchors[targetIndex].id);
-  }, [activeAnchorIndex, messageAnchors, requestScrollToAnchor]);
+  }, [prevAnchorId, requestScrollToAnchor]);
   const handleNextMessage = useCallback(() => {
-    if (messageAnchors.length === 0) {
-      return;
+    if (nextAnchorId) {
+      requestScrollToAnchor(nextAnchorId);
     }
-    const targetIndex =
-      activeAnchorIndex === -1
-        ? 0
-        : Math.min(messageAnchors.length - 1, activeAnchorIndex + 1);
-    requestScrollToAnchor(messageAnchors[targetIndex].id);
-  }, [activeAnchorIndex, messageAnchors, requestScrollToAnchor]);
+  }, [nextAnchorId, requestScrollToAnchor]);
 
   const handlePendingJumpTargetReady = useCallback((messageId: string) => {
     if (pendingJumpMessageId !== messageId) {

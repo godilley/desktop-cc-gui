@@ -157,7 +157,10 @@
   z-index: 12;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  /* Center everything (dashes + chevrons) on the rail's midline so they share one
+     clean axis — right-aligning them (different widths) put the chevrons left of
+     the dashes and on different sub-pixels per rotation. */
+  align-items: center;
   gap: 8px;
   pointer-events: none;
 }
@@ -169,10 +172,16 @@
   top: auto;
 }
 
+/* Center the dash ruler within the cluster (it right-aligns when standalone) so
+   dashes and chevrons share the same center axis. */
+.messages-nav-rail .messages-anchor-ruler {
+  align-items: center;
+}
+
 .messages-nav-group {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
   pointer-events: auto;
 }
 
@@ -186,8 +195,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 16px;
+  /* Square box == glyph size so the 20px glyph never overflows (overflow caused
+     the asymmetric sub-pixel rendering); centered on the rail midline by the
+     cluster's align-items:center. */
+  width: 20px;
+  height: 20px;
+  /* Pull the two chevrons of a pair together past the glyph's internal padding
+     so they read as a tight double chevron. Symmetric so it works in the
+     column-reverse down-group too. */
+  margin-block: -2px;
   padding: 0;
   border: none;
   background: none;

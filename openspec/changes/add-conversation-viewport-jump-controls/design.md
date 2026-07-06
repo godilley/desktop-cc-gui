@@ -61,11 +61,17 @@ separate corner floater (v1, superseded).
      flyout still anchors to it. The whole cluster is shown only when the rail is
      (≥2 anchors, `hasAnchorRail`).
 
-6. Inner chevrons step through message anchors (the rail's points).
-   - Reuse `messageAnchors` + `activeAnchorId` + `requestScrollToAnchor` (which
-     already releases stick); index ±1 with `-1` fallbacks (prev→last, next→first);
-     disabled at the ends. Chosen over "every message" so no new target list or
-     state is introduced.
+6. Inner chevrons step to the previous / next message anchor (the rail's points).
+   - The "current" anchor is the one nearest the active-anchor pivot line
+     (`scrollTop + min(96, clientHeight*0.32)`), resolved in the throttled scroll
+     handler; step ±1 from it via `requestScrollToAnchor` (which releases stick);
+     disabled when there is no anchor in that direction. A bottom-edge correction
+     forces "current" to the last anchor when scrolled to the bottom.
+   - Chosen over "every message" (no new target list) and over two rejected
+     variants: index-from-`activeAnchorId` (the near-top heuristic never reaches
+     the last message → "up" at the bottom skipped one), and a raw
+     `scrollTop`-threshold scan (a small offset made "next" re-select the current
+     message). Nearest-to-pivot is stable against small scroll offsets.
 
 7. Pure-CSS hover grouping for the single-vs-double affordance.
    - DOM order per group is `[outer][inner]`; `.outer:hover ~ .inner` lights the
