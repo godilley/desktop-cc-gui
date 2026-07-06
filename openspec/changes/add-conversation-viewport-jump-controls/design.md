@@ -9,7 +9,8 @@ which holds the single `stickToBottom` truth and exposes
 by a live-tail window; `revealAllHistoryItems(mode)` (`Messages.tsx:1763`) reveals
 all items, and its `useLayoutEffect` (`:1771`) already does `setStick(false)` +
 `scrollTop = 0` for `mode === "manual"`. The bottom sentinel is `bottomRef`;
-`MessagesOutlineFloater` is the styling/interaction template for a corner floater.
+The controls are a chevron cluster built around the anchor rail (v2), not a
+separate corner floater (v1, superseded).
 
 ## Goals / Non-Goals
 
@@ -47,9 +48,32 @@ all items, and its `useLayoutEffect` (`:1771`) already does `setStick(false)` +
      content keeps following.
 
 4. Presence gating is derived from live scroll state, not new global state.
-   - Compute "is scrollable", "at top", "at bottom" from `containerRef` in the
-     existing scroll handler (`updateAutoScroll`) or a light local state; hide
-     each control at its own extreme. Keep it cheap — no per-frame layout thrash.
+   - Outer chevrons: compute "is scrollable / at top / at bottom" from
+     `containerRef` in the existing throttled scroll handler (`updateAutoScroll`);
+     disable each at its own extreme. Keep it cheap — no per-frame layout thrash.
+   - Inner chevrons: derive `canPrev` / `canNext` from `activeAnchorId` +
+     `messageAnchors` in render (anchor-state driven, not per streamed token).
+
+5. Rail-integrated cluster (v2), superseding the v1 corner floater.
+   - `MessagesViewportJumpControls` wraps `MessagesAnchorRail` as `children`: an
+     up-group above, a down-group below. It takes over the rail's absolute slot
+     (`right:50px`); the rail flows inside as `position:relative` so its outline
+     flyout still anchors to it. The whole cluster is shown only when the rail is
+     (≥2 anchors, `hasAnchorRail`).
+
+6. Inner chevrons step through message anchors (the rail's points).
+   - Reuse `messageAnchors` + `activeAnchorId` + `requestScrollToAnchor` (which
+     already releases stick); index ±1 with `-1` fallbacks (prev→last, next→first);
+     disabled at the ends. Chosen over "every message" so no new target list or
+     state is introduced.
+
+7. Pure-CSS hover grouping for the single-vs-double affordance.
+   - DOM order per group is `[outer][inner]`; `.outer:hover ~ .inner` lights the
+     inner too (both lit = a double chevron), while `.inner:hover` — which cannot
+     select the preceding outer — lights only itself. `:focus-visible` mirrors
+     hover for keyboard parity. Chosen over rendering a third (double) icon or a
+     JS hover-state so we get the conventional next/last iconography from two
+     single chevrons.
 
 ## Risks / Trade-offs
 

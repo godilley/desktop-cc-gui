@@ -118,6 +118,7 @@
 }
 
 @media (max-width: 1100px) {
+  .messages-nav-rail,
   .messages-anchor-rail {
     display: none;
   }
@@ -132,6 +133,93 @@
   .messages-anchor-panel {
     transition: none !important;
     animation: none !important;
+  }
+}
+
+/*
+ * Conversation navigation cluster (MessagesViewportJumpControls).
+ *
+ * Wraps the anchor rail with two chevron pairs stacked above and below it, and
+ * takes over the rail's absolute position on the right. The rail itself flows
+ * inside as a relative element so its outline flyout still anchors to it. The
+ * container is click-through; only the chevrons and the rail capture pointers.
+ *
+ * The outer chevron of each pair jumps to the conversation extreme, the inner
+ * steps one message anchor. The single-vs-double-chevron affordance is CSS-only:
+ * DOM order per group is [outer][inner], so `.outer:hover ~ .inner` lights the
+ * inner too (both lit reads as a double chevron), while `.inner:hover` — which
+ * cannot reach the preceding outer sibling — lights only itself.
+ */
+.messages-nav-rail {
+  position: absolute;
+  right: 50px;
+  top: 120px;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+}
+
+/* The anchor rail flows inside the cluster instead of positioning itself. */
+.messages-nav-rail .messages-anchor-rail {
+  position: relative;
+  right: auto;
+  top: auto;
+}
+
+.messages-nav-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  pointer-events: auto;
+}
+
+/* Bottom pair keeps DOM order [outer][inner] for the sibling-hover rule, but
+   renders the outer (jump-to-latest) at the very bottom. */
+.messages-nav-group--down {
+  flex-direction: column-reverse;
+}
+
+.messages-nav-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+
+.messages-nav-chevron svg {
+  display: block;
+}
+
+.messages-nav-chevron:disabled {
+  opacity: 0.28;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* Hover grouping: outer lights both (double chevron), inner lights only itself.
+   Keyboard focus mirrors hover so the affordance is not pointer-only. */
+.messages-nav-chevron--inner:hover:not(:disabled),
+.messages-nav-chevron--inner:focus-visible:not(:disabled),
+.messages-nav-chevron--outer:hover:not(:disabled),
+.messages-nav-chevron--outer:focus-visible:not(:disabled),
+.messages-nav-chevron--outer:hover:not(:disabled) ~ .messages-nav-chevron--inner:not(:disabled),
+.messages-nav-chevron--outer:focus-visible:not(:disabled) ~ .messages-nav-chevron--inner:not(:disabled) {
+  color: var(--text-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .messages-nav-chevron {
+    transition: none !important;
   }
 }
 

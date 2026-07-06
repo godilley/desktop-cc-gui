@@ -42,6 +42,7 @@ import {
 } from "../utils/groupToolItems";
 import { MessagesTimeline } from "./MessagesTimeline";
 import { MessagesAnchorRail } from "./MessagesAnchorRail";
+import { MessagesViewportJumpControls } from "./MessagesViewportJumpControls";
 import {
   MessagesInlineApproval,
   MessagesInlineUserInput,
@@ -94,12 +95,14 @@ import {
   toConversationEngine,
   VISIBLE_MESSAGE_WINDOW,
   STREAMING_VISIBLE_WINDOW,
+  SCROLL_THRESHOLD_PX,
 } from "./messagesRenderUtils";
 import {
   buildMessageActionTargets,
   buildMessagesScrollKey,
   findItemById,
   findLatestAssistantTextLength,
+  isMessagesScrollNearBottom,
   mergeReadableRecoveryItems,
   resolveActiveUserInputRequest,
   resolveActiveMessageAnchor,
@@ -482,6 +485,13 @@ export const Messages = memo(function Messages({
     DEFAULT_RENDER_LOOP_GUARD_BUDGET,
   );
   const [showAllHistoryItems, setShowAllHistoryItems] = useState(false);
+  // Presence gating for the viewport-jump controls. Derived from live scroll
+  // geometry in updateAutoScroll (the existing throttled scroll path) so we
+  // never measure on every streamed token; only re-renders when a boolean flips.
+  const [viewportJump, setViewportJump] = useState({
+    canJumpToStart: false,
+    canJumpToLatest: false,
+  });
   const [historyExpansionMode, setHistoryExpansionMode] =
     useState<MessagesHistoryExpansionMode>(null);
   const [pendingJumpMessageId, setPendingJumpMessageId] = useState<string | null>(null);
@@ -1794,7 +1804,45 @@ export const Messages = memo(function Messages({
     // anchor scheduling stays here in Messages (not the scroll owner).
     scrollOwner.notifyUserScroll();
     scheduleAnchorUpdate("scroll");
+    // Derive viewport-jump presence off the same throttled scroll read. Cheap
+    // geometry reads only; setState is skipped unless a boolean actually flips.
+    const container = containerRef.current;
+    if (container) {
+      const scrollable =
+        container.scrollHeight - container.clientHeight > SCROLL_THRESHOLD_PX;
+      const canJumpToStart = scrollable && container.scrollTop > SCROLL_THRESHOLD_PX;
+      const canJumpToLatest =
+        scrollable && !isMessagesScrollNearBottom(container, SCROLL_THRESHOLD_PX);
+      setViewportJump((prev) =>
+        prev.canJumpToStart === canJumpToStart &&
+        prev.canJumpToLatest === canJumpToLatest
+          ? prev
+          : { canJumpToStart, canJumpToLatest },
+      );
+    }
   }, [scheduleAnchorUpdate, scrollOwner]);
+  const handleJumpToLatest = useCallback(() => {
+    // Re-arm stick BEFORE scrolling so the live-follow effect keeps tailing
+    // subsequently streamed content instead of the user's old scrolled-up spot.
+    scrollOwner.setStick(true);
+    bottomRef.current?.scrollIntoView({ behavior: "instant", block: "end" });
+    scrollOwner.requestFollow();
+  }, [scrollOwner]);
+  const handleJumpToStart = useCallback(() => {
+    const alreadyShown = showAllHistoryItems;
+    // Reveal collapsed history so we land on the true first message. When it
+    // transitions false→true, revealAllHistoryItems' layout effect does the
+    // setStick(false) + scrollTop = 0. When already shown there is no such
+    // transition, so do it directly here — otherwise the button is a no-op.
+    revealAllHistoryItems("manual");
+    if (alreadyShown) {
+      scrollOwner.setStick(false);
+      const container = containerRef.current;
+      if (container) {
+        container.scrollTop = 0;
+      }
+    }
+  }, [revealAllHistoryItems, scrollOwner, showAllHistoryItems]);
   const clearTransientUiState = useCallback(() => {
     if (copyTimeoutRef.current) {
       window.clearTimeout(copyTimeoutRef.current);
@@ -2138,6 +2186,37 @@ export const Messages = memo(function Messages({
     }
   }, [revealAllHistoryItems, scrollToAnchor, showAllHistoryItems]);
 
+  // Inner chevrons step through the user-message anchors (the rail's points),
+  // reusing the same jump primitive the rail uses. Disabled only at the extreme
+  // anchor; when no anchor is active (index -1), prev enters from the last and
+  // next from the first.
+  const activeAnchorIndex = messageAnchors.findIndex(
+    (anchor) => anchor.id === activeAnchorId,
+  );
+  const canPrevMessage = messageAnchors.length > 1 && activeAnchorIndex !== 0;
+  const canNextMessage =
+    messageAnchors.length > 1 && activeAnchorIndex !== messageAnchors.length - 1;
+  const handlePrevMessage = useCallback(() => {
+    if (messageAnchors.length === 0) {
+      return;
+    }
+    const targetIndex =
+      activeAnchorIndex === -1
+        ? messageAnchors.length - 1
+        : Math.max(0, activeAnchorIndex - 1);
+    requestScrollToAnchor(messageAnchors[targetIndex].id);
+  }, [activeAnchorIndex, messageAnchors, requestScrollToAnchor]);
+  const handleNextMessage = useCallback(() => {
+    if (messageAnchors.length === 0) {
+      return;
+    }
+    const targetIndex =
+      activeAnchorIndex === -1
+        ? 0
+        : Math.min(messageAnchors.length - 1, activeAnchorIndex + 1);
+    requestScrollToAnchor(messageAnchors[targetIndex].id);
+  }, [activeAnchorIndex, messageAnchors, requestScrollToAnchor]);
+
   const handlePendingJumpTargetReady = useCallback((messageId: string) => {
     if (pendingJumpMessageId !== messageId) {
       return;
@@ -2178,13 +2257,32 @@ export const Messages = memo(function Messages({
     <div
       className={`messages-shell${hasAnchorRail ? " has-anchor-rail" : ""}${enableClaudeRenderSafeMode ? " claude-render-safe" : ""}`}
     >
-      <MessagesAnchorRail
-        activeAnchorId={activeAnchorId}
-        anchors={messageAnchors}
-        anchorNavigationLabel={t("messages.anchorNavigation")}
-        getFallbackTitle={(index) => t("messages.anchorUserTitle", { index: index + 1 })}
-        onScrollToAnchor={requestScrollToAnchor}
-      />
+      {hasAnchorRail ? (
+        <MessagesViewportJumpControls
+          canJumpToStart={viewportJump.canJumpToStart}
+          canJumpToLatest={viewportJump.canJumpToLatest}
+          canPrevMessage={canPrevMessage}
+          canNextMessage={canNextMessage}
+          onJumpToStart={handleJumpToStart}
+          onJumpToLatest={handleJumpToLatest}
+          onPrevMessage={handlePrevMessage}
+          onNextMessage={handleNextMessage}
+          labels={{
+            jumpToStart: t("messages.jumpToStart"),
+            jumpToLatest: t("messages.jumpToLatest"),
+            prevMessage: t("messages.prevMessage"),
+            nextMessage: t("messages.nextMessage"),
+          }}
+        >
+          <MessagesAnchorRail
+            activeAnchorId={activeAnchorId}
+            anchors={messageAnchors}
+            anchorNavigationLabel={t("messages.anchorNavigation")}
+            getFallbackTitle={(index) => t("messages.anchorUserTitle", { index: index + 1 })}
+            onScrollToAnchor={requestScrollToAnchor}
+          />
+        </MessagesViewportJumpControls>
+      ) : null}
       <div
         className="messages scrollable"
         ref={containerRef}

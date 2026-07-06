@@ -2,79 +2,99 @@
 
 ## ADDED Requirements
 
-### Requirement: Viewport Jump Controls Are Surfaced On The Messages Surface
+### Requirement: Navigation Cluster Is Positioned Around The Anchor Rail
 
-The messages surface MUST surface two viewport-jump controls — jump-to-start and
-jump-to-latest — presence-gated on the scroll container being scrollable, and
-each hidden (or inert) at its own extreme.
+The conversation navigation controls MUST be presented as a vertical cluster
+built around the message anchor rail: outer + inner chevron controls stacked
+above the rail and mirrored below it. The cluster MUST be shown only when the
+anchor rail is shown (two or more message anchors), and MUST NOT break the anchor
+rail's own collapse/expand or its outline flyout.
 
-#### Scenario: controls appear when the conversation overflows
+#### Scenario: cluster appears with the anchor rail
 
-- **WHEN** the messages scroll container has more content than fits the viewport
-- **THEN** the surface MUST render the jump-to-start and jump-to-latest controls
-- **AND** each control MUST be a keyboard-focusable button with a descriptive
-  `aria-label`
+- **WHEN** the conversation has two or more message anchors (the anchor rail is
+  shown)
+- **THEN** the navigation cluster MUST render its chevron controls above and
+  below the rail
+- **AND** the anchor rail's dash ruler, hover-expand outline, and flyout
+  positioning MUST continue to work unchanged
 
-#### Scenario: controls are inert on a short conversation
+#### Scenario: cluster hidden on short conversations
 
-- **WHEN** the conversation fits within the viewport (no scrollback)
-- **THEN** neither control is shown, or activating a shown control is a safe
-  no-op
-- **AND** no error is produced
+- **WHEN** the conversation has fewer than two message anchors
+- **THEN** neither the rail nor the chevron controls are shown
 
-#### Scenario: each control hides at its own extreme
+### Requirement: Outer Chevrons Jump To Conversation Extremes
 
-- **WHEN** the viewport is already at the top of the conversation
-- **THEN** the jump-to-start control MUST be hidden or disabled
-- **WHEN** the viewport is stuck to the bottom (following the latest message)
-- **THEN** the jump-to-latest control MUST be hidden or disabled
+The outer (rail-distal) chevrons MUST jump to the conversation extremes: the
+top outer chevron to the first message, the bottom outer chevron to the latest
+message. Jump-to-first MUST reveal any collapsed history and land on the true
+first message; jump-to-latest MUST re-arm stick-to-bottom so streamed content
+keeps following. Both MUST cooperate with the single scroll owner
+(`useMessagesScrollOwner`) and MUST NOT introduce a competing scroll owner.
 
-### Requirement: Jump To Latest Re-Arms Stick-To-Bottom
+#### Scenario: outer-down jumps to latest and re-arms follow
 
-Activating jump-to-latest MUST move the viewport to the newest message and
-re-arm the conversation's stick-to-bottom follow through the single scroll owner,
-so subsequently streamed content keeps following.
-
-#### Scenario: jump to latest after scrolling up
-
-- **WHEN** the user has scrolled up (stick-to-bottom released) and activates
-  jump-to-latest
+- **WHEN** the user has scrolled up and activates the bottom outer chevron
 - **THEN** the viewport MUST move to the newest message
-- **AND** the scroll owner's stick-to-bottom MUST be re-armed so new streamed
-  content continues to auto-follow
+- **AND** stick-to-bottom MUST be re-armed so new streamed content auto-follows
 
-### Requirement: Jump To Start Reveals Collapsed History
+#### Scenario: outer-up reveals history and lands at the top
 
-Activating jump-to-start MUST land the viewport on the true first message of the
-conversation, revealing any collapsed / trimmed history first, and MUST release
-stick-to-bottom. It MUST NOT be a silent no-op when history is already fully
-shown.
+- **WHEN** older history is collapsed and the user activates the top outer
+  chevron
+- **THEN** collapsed history MUST be revealed and the viewport MUST land on the
+  first message, releasing stick-to-bottom, and never be a silent no-op
 
-#### Scenario: jump to start with trimmed history
+### Requirement: Inner Chevrons Step Through Message Anchors
 
-- **WHEN** older history is collapsed by the live-tail window and the user
-  activates jump-to-start
-- **THEN** the surface MUST reveal all collapsed history
-- **AND** land the viewport at the first message
-- **AND** release stick-to-bottom so the viewport is not pulled back down
+The inner (rail-proximal) chevrons MUST step one message anchor at a time
+relative to the active anchor: the top inner chevron to the previous anchor, the
+bottom inner chevron to the next anchor, reusing the existing anchor list, active
+anchor, and anchor-scroll primitive. An inner chevron MUST be disabled when no
+anchor exists in its direction.
 
-#### Scenario: jump to start when history already shown
+#### Scenario: step to the previous / next anchor
 
-- **WHEN** all history is already revealed and the user activates jump-to-start
-- **THEN** the surface MUST still move the viewport to the top and release
-  stick-to-bottom rather than doing nothing
+- **WHEN** an anchor is active and the user activates the top inner chevron
+- **THEN** the viewport MUST scroll to the immediately previous message anchor
+- **WHEN** the user activates the bottom inner chevron
+- **THEN** the viewport MUST scroll to the immediately next message anchor
 
-### Requirement: Controls Cooperate With The Single Scroll Owner
+#### Scenario: inner chevron disabled at the ends
 
-The jump controls MUST route their scroll effects through the single scroll owner
-(`useMessagesScrollOwner`) and MUST NOT introduce an independent scroll owner. No
-control may leave the scroll owner's stick-to-bottom truth desynchronized from the
-resulting viewport position.
+- **WHEN** the active anchor is the first anchor
+- **THEN** the top inner chevron MUST be disabled
+- **WHEN** the active anchor is the last anchor
+- **THEN** the bottom inner chevron MUST be disabled
 
-#### Scenario: no competing scroll owner is introduced
+### Requirement: Hover Grouping Conveys Step-vs-Jump Without A Third Icon
 
-- **WHEN** a jump control changes the viewport position
-- **THEN** it MUST update the scroll owner's stick-to-bottom state to match the
-  new position (released for jump-to-start, armed for jump-to-latest)
-- **AND** it MUST NOT perform raw scroll writes that bypass the owner, except a
-  jump-to-start `scrollTop = 0` that is accompanied by releasing stick
+Hovering an outer chevron MUST visually highlight both chevrons on that side, so
+the pair reads as a double chevron (jump), while hovering an inner chevron MUST
+highlight only itself (step) — conveying the conventional single-vs-double
+affordance without rendering a third icon. The grouping MUST be presentation-only
+and MUST NOT be required to operate the controls.
+
+#### Scenario: hovering outer highlights both
+
+- **WHEN** the pointer hovers an outer chevron
+- **THEN** both chevrons on that side MUST appear highlighted
+
+#### Scenario: hovering inner highlights only itself
+
+- **WHEN** the pointer hovers an inner chevron
+- **THEN** only that inner chevron MUST appear highlighted
+
+### Requirement: Navigation Controls Are Accessible
+
+Each chevron MUST be a keyboard-focusable button with a distinct, descriptive
+`aria-label` (jump to start, previous message, next message, jump to latest). The
+hover-grouping affordance is presentation only and MUST NOT be required for
+keyboard or screen-reader operation.
+
+#### Scenario: keyboard and screen-reader operation
+
+- **WHEN** a user navigates the controls by keyboard or screen reader
+- **THEN** each chevron MUST expose its own descriptive label and be operable
+  without relying on hover state

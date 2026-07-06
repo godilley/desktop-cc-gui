@@ -34,24 +34,31 @@ them as two buttons.
 
 ## What Changes
 
-- New component `MessagesViewportJumpControls` mounted inside `.messages-shell`.
-- **Jump to latest**: scroll the container to the bottom sentinel, then re-arm
-  the scroll owner (`setStick(true)` + `requestFollow()`).
-- **Jump to start**: reveal all collapsed history and land the viewport at the
-  top, releasing stick (`revealAllHistoryItems("manual")`, with a direct
-  `scrollTop = 0` + `setStick(false)` fallback when history is already fully
-  shown so the action is not a no-op).
-- Each control is presence-gated on the container being scrollable and hidden at
-  its own extreme (at top → hide jump-to-start; stuck to bottom → hide
-  jump-to-latest).
-- New i18n labels + accessible `aria-label`s; new scoped CSS.
+- A rail-integrated chevron cluster (`MessagesViewportJumpControls`) wrapping the
+  message anchor rail: an up-group above and a down-group below, each with an
+  **outer** (jump-to-extreme) and **inner** (step-one-anchor) chevron.
+- **Outer chevrons** = jump to conversation extremes: jump-to-latest re-arms the
+  scroll owner (`setStick(true)` + `requestFollow()`); jump-to-start reveals
+  collapsed history and lands at the top (`revealAllHistoryItems("manual")` with
+  the already-shown no-op guard).
+- **Inner chevrons** = step to the previous / next message anchor via the
+  existing `messageAnchors` + `activeAnchorId` + `requestScrollToAnchor`; disabled
+  at the ends.
+- **Hover grouping** (pure CSS): hovering an outer chevron highlights both
+  chevrons on that side (reads as a double chevron); hovering an inner highlights
+  only itself — the conventional single-vs-double affordance without a third icon.
+- Cluster is shown only when the anchor rail is shown (≥2 anchors); replaces the
+  earlier bottom-left floater and preserves the rail's collapse/flyout.
+- New i18n labels (prev/next message) + accessible `aria-label`s; reworked CSS.
 
 ## Capabilities
 
 ### New Capabilities
 
-- `conversation-viewport-jump-controls`: viewport jump-to-start / jump-to-latest
-  controls that reuse the scroll owner and history-reveal primitives.
+- `conversation-viewport-jump-controls`: a rail-integrated chevron cluster —
+  outer chevrons jump to conversation extremes (reusing the scroll owner +
+  history-reveal), inner chevrons step through message anchors, with a pure-CSS
+  hover-grouping affordance.
 
 ### Modified Capabilities
 
