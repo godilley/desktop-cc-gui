@@ -1826,7 +1826,12 @@ export const Messages = memo(function Messages({
     if (container) {
       const scrollable =
         container.scrollHeight - container.clientHeight > SCROLL_THRESHOLD_PX;
-      const canJumpToStart = scrollable && container.scrollTop > SCROLL_THRESHOLD_PX;
+      // Collapsed history above is always reachable via the reveal path, even
+      // when the trimmed window itself is short/at its top — so jump-to-start
+      // must stay enabled whenever history is collapsed, not only when scrolled.
+      const canJumpToStart =
+        (scrollable && container.scrollTop > SCROLL_THRESHOLD_PX) ||
+        collapsedHistoryItemCount > 0;
       const canJumpToLatest =
         scrollable && !isMessagesScrollNearBottom(container, SCROLL_THRESHOLD_PX);
       // prev/next targets are NOT derived here — they follow the rail's active
@@ -1839,7 +1844,7 @@ export const Messages = memo(function Messages({
           : { canJumpToStart, canJumpToLatest },
       );
     }
-  }, [scheduleAnchorUpdate, scrollOwner]);
+  }, [collapsedHistoryItemCount, scheduleAnchorUpdate, scrollOwner]);
   const handleJumpToLatest = useCallback(() => {
     // Re-arm stick BEFORE scrolling so the live-follow effect keeps tailing
     // subsequently streamed content instead of the user's old scrolled-up spot.
