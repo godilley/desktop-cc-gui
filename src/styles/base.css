@@ -55,7 +55,7 @@
 
 /* Firefox 滚动条 */
 /*
- * ponytail: intentionally NO transition on `*`. A previous version animated a
+ * Intentionally NO transition on `*`. A previous version animated a
  * registered @property (--sb-thumb-alpha) on every element for 2000ms on hover,
  * driving a live color-mix() on `*::-webkit-scrollbar-thumb`. On WebKitGTK
  * (Tauri's Linux webview) that forced app-wide style recalc on every animation
@@ -63,7 +63,7 @@
  * reveals instantly on hover via a plain color swap (no animation).
  */
 /*
- * ponytail: scrollbar styling is applied to the SCROLL ROOT only, not `*`.
+ * Scrollbar styling is applied to the SCROLL ROOT only, not `*`.
  * Universal `*` / `*:hover` scrollbar rules force WebKitGTK to re-match and
  * re-resolve (incl. var()) for EVERY element on every style recalc — a large
  * part of the multi-second `recalculate-styles` stalls on big projects. Scoping
