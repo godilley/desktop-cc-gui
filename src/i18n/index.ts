@@ -102,9 +102,35 @@ function normalizeLanguage(lang: string | undefined): SupportedLanguage {
     : DEFAULT_LANGUAGE;
 }
 
+// No saved choice → follow the OS/webview locale, matched by base subtag
+// against every language we ship; a validly saved choice always wins over
+// this inference. Chinese needs a script check (Simplified vs Traditional)
+// since both share the "zh" subtag; an unrecognized subtag falls back to en.
+const OS_LANGUAGE_SUBTAGS: Partial<Record<string, SupportedLanguage>> = {
+  en: "en",
+  es: "es",
+  fr: "fr",
+  hi: "hi",
+  ja: "ja",
+  ru: "ru",
+  ko: "ko",
+  pt: "pt-BR",
+};
+
+const detectOsLanguage = (): SupportedLanguage => {
+  const sys = (typeof navigator !== "undefined" ? navigator.language || "" : "").toLowerCase();
+  if (sys.startsWith("zh")) {
+    return sys.includes("hant") || sys.includes("-tw") || sys.includes("-hk") ? "zh-TW" : "zh";
+  }
+  return OS_LANGUAGE_SUBTAGS[sys.split("-")[0]] ?? "en";
+};
+
 const getStoredLanguage = (): SupportedLanguage => {
   const stored = getClientStoreSync<string>("app", "language");
-  return normalizeLanguage(stored);
+  if (stored !== undefined && supportedLanguages.has(stored as SupportedLanguage)) {
+    return stored as SupportedLanguage;
+  }
+  return detectOsLanguage();
 };
 
 export const saveLanguage = (lang: string): void => {

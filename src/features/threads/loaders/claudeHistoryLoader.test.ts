@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ConversationItem } from "../../../types";
+import i18n from "../../../i18n";
 import {
   createClaudeHistoryLoader,
   parseClaudeHistoryMessages,
@@ -385,19 +386,19 @@ describe("parseClaudeHistoryMessages", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "resume-failed",
-          title: "恢复失败",
+          title: i18n.t("tools.claudeControlResumeFailed"),
           output: "Session 1778306483383 was not found.",
           status: "failed",
         }),
         expect.objectContaining({
           id: "model-changed",
-          title: "模型已切换",
+          title: i18n.t("tools.claudeControlModelChanged"),
           output: "Set model to MiniMax-M2.7",
           status: "completed",
         }),
         expect.objectContaining({
           id: "interrupted",
-          title: "用户已中断",
+          title: i18n.t("tools.claudeControlInterrupted"),
           output: "[Request interrupted by user]",
         }),
       ]),
@@ -475,7 +476,7 @@ describe("parseClaudeHistoryMessages", () => {
         id: "backend-resume-event",
         kind: "tool",
         toolType: "claudeControlEvent",
-        title: "恢复失败",
+        title: i18n.t("tools.claudeControlResumeFailed"),
         output: "Session 1778306483383 was not found.",
         status: "failed",
       }),

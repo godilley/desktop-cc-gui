@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-let storedLanguage = "zh";
+let storedLanguage: string | undefined = "zh";
+let navigatorLanguage = "zh-CN";
 let cachePopulated = false;
 const writeClientStoreValueMock = vi.hoisted(() => vi.fn());
 const loadClientStoreMock = vi.hoisted(() => vi.fn());
@@ -17,10 +18,16 @@ describe("i18n dynamic locale loading", () => {
   beforeEach(() => {
     vi.resetModules();
     storedLanguage = "zh";
+    navigatorLanguage = "zh-CN";
     cachePopulated = false;
     writeClientStoreValueMock.mockReset();
     loadClientStoreMock.mockReset().mockImplementation(async () => {
       cachePopulated = true;
+    });
+    vi.stubGlobal("navigator", {
+      get language() {
+        return navigatorLanguage;
+      },
     });
   });
 
@@ -45,13 +52,84 @@ describe("i18n dynamic locale loading", () => {
 
   it("awaits loadClientStore before reading the stored language (regression for #1085)", async () => {
     // Without the await, getClientStoreSync would still see an empty cache
-    // here and fall back to the hardcoded default instead of the saved "en".
+    // here and fall back to the OS/hardcoded default instead of the saved "en".
     storedLanguage = "en";
+    navigatorLanguage = "zh-CN";
 
     const module = await import("./index");
     const i18n = await module.i18nReady;
 
     expect(loadClientStoreMock).toHaveBeenCalledWith("app");
+    expect(i18n.language).toBe("en");
+  });
+
+  it("defaults to the OS locale when nothing is stored", async () => {
+    storedLanguage = undefined;
+    navigatorLanguage = "en-GB";
+
+    const module = await import("./index");
+    const i18n = await module.i18nReady;
+
+    expect(i18n.language).toBe("en");
+  });
+
+  it("defaults to zh when the OS locale is Chinese and nothing is stored", async () => {
+    storedLanguage = undefined;
+    navigatorLanguage = "zh-Hans-CN";
+
+    const module = await import("./index");
+    const i18n = await module.i18nReady;
+
+    expect(i18n.language).toBe("zh");
+  });
+
+  it("defaults to zh-TW when the OS locale is Traditional Chinese and nothing is stored", async () => {
+    storedLanguage = undefined;
+    navigatorLanguage = "zh-Hant-TW";
+
+    const module = await import("./index");
+    const i18n = await module.i18nReady;
+
+    expect(i18n.language).toBe("zh-TW");
+  });
+
+  it("defaults to ko when the OS locale is Korean and nothing is stored", async () => {
+    storedLanguage = undefined;
+    navigatorLanguage = "ko-KR";
+
+    const module = await import("./index");
+    const i18n = await module.i18nReady;
+
+    expect(i18n.language).toBe("ko");
+  });
+
+  it("defaults to pt-BR when the OS locale is Portuguese and nothing is stored", async () => {
+    storedLanguage = undefined;
+    navigatorLanguage = "pt-PT";
+
+    const module = await import("./index");
+    const i18n = await module.i18nReady;
+
+    expect(i18n.language).toBe("pt-BR");
+  });
+
+  it("falls back to en for an OS locale we don't ship", async () => {
+    storedLanguage = undefined;
+    navigatorLanguage = "th-TH";
+
+    const module = await import("./index");
+    const i18n = await module.i18nReady;
+
+    expect(i18n.language).toBe("en");
+  });
+
+  it("prefers the stored choice over the OS locale", async () => {
+    storedLanguage = "en";
+    navigatorLanguage = "zh-CN";
+
+    const module = await import("./index");
+    const i18n = await module.i18nReady;
+
     expect(i18n.language).toBe("en");
   });
 
