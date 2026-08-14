@@ -458,7 +458,10 @@ describe("parseClaudeHistoryMessages", () => {
         id: "backend-resume-event",
         role: "system",
         toolType: "claudeControlEvent",
-        title: "Resume failed",
+        // Deliberately not a real translation of any shipped locale: proves
+        // the loader replaces the backend-supplied title rather than passing
+        // it through, regardless of which language happens to be active.
+        title: "backend-supplied title placeholder",
         text: "Session 1778306483383 was not found.",
         status: "failed",
         tool_input: {

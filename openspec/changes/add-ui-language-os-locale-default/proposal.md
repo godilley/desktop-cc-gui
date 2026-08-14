@@ -56,18 +56,6 @@ first-run default behavior (was unconditional `zh`) and invites the maintainer
 to weigh in or reject the default-language decision — it is not folded into
 the race-fix bug report.
 
-### Optional follow-up to offer, not to force
-
-While fixing the startup race, every test file that mocks
-`services/clientStorage` (43 sites, including the suite's own global default
-mock in `src/test/vitest.setup.ts`) needed the same one-line addition for a
-newly-added export. Nothing about the current mock shapes is broken or asks
-for a rewrite — but the repeated fan-out is a real signal: the *next* new
-`clientStorage` export will hit the same 40+ file problem again. Investigated
-whether a shared test-mock helper is warranted now: the 43 sites' mock shapes
-genuinely diverge (different exports, some back a `Map` cache, some destructure
-external `vi.hoisted` objects) enough that a forced one-size factory isn't a
-clean win today. Raise this as a question in the PR body — offer to open a
-follow-up PR adding a small set of shared default stubs (spread into each
-site's existing mock, not a replacement) if the maintainer wants it; skip it
-with zero cost if they don't.
+(The `services/clientStorage` test-mock fan-out and the optional shared-helper
+offer belong to the `fix/i18n-stored-language-race` PR, where that fan-out
+actually happened — not repeated here.)

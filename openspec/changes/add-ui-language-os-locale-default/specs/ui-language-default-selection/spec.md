@@ -16,8 +16,9 @@
 
 - **WHEN** 没有已保存的语言选择
 - **AND** `navigator.language` 以 `zh` 开头
-- **THEN** 若该值指示繁体（如包含 `Hant`、`-TW`、`-HK`）初始界面语言 MUST 为 `zh-TW`
-- **AND** 否则（如 `zh-Hans-CN`）初始界面语言 MUST 为 `zh`
+- **THEN** 若该值显式包含简体脚本标签 `Hans`（如 `zh-Hans-HK`），初始界面语言 MUST 为 `zh`，脚本标签优先于地区
+- **AND** 否则若该值指示繁体（包含 `Hant`、`-TW`、`-HK` 或 `-MO`）初始界面语言 MUST 为 `zh-TW`
+- **AND** 否则（如 `zh-Hans-CN`、`zh-CN`）初始界面语言 MUST 为 `zh`
 
 #### Scenario: no saved choice on an OS locale we ship resolves to that language
 

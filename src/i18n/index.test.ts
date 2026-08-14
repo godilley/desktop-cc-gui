@@ -93,6 +93,26 @@ describe("i18n dynamic locale loading", () => {
     expect(i18n.language).toBe("zh-TW");
   });
 
+  it("defaults to zh-TW for a Macau OS locale and nothing is stored", async () => {
+    storedLanguage = undefined;
+    navigatorLanguage = "zh-MO";
+
+    const module = await import("./index");
+    const i18n = await module.i18nReady;
+
+    expect(i18n.language).toBe("zh-TW");
+  });
+
+  it("defaults to zh when the OS locale is explicitly Simplified in a Traditional-leaning region", async () => {
+    storedLanguage = undefined;
+    navigatorLanguage = "zh-Hans-HK";
+
+    const module = await import("./index");
+    const i18n = await module.i18nReady;
+
+    expect(i18n.language).toBe("zh");
+  });
+
   it("defaults to ko when the OS locale is Korean and nothing is stored", async () => {
     storedLanguage = undefined;
     navigatorLanguage = "ko-KR";

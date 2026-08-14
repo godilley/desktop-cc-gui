@@ -120,7 +120,15 @@ const OS_LANGUAGE_SUBTAGS: Partial<Record<string, SupportedLanguage>> = {
 const detectOsLanguage = (): SupportedLanguage => {
   const sys = (typeof navigator !== "undefined" ? navigator.language || "" : "").toLowerCase();
   if (sys.startsWith("zh")) {
-    return sys.includes("hant") || sys.includes("-tw") || sys.includes("-hk") ? "zh-TW" : "zh";
+    // An explicit script subtag (Hans/Hant) is authoritative over region,
+    // since Hong Kong/Macau ship both scripts (e.g. zh-Hans-HK is Simplified
+    // despite the "-hk" region, matching zh-Hant-CN being Traditional).
+    if (sys.includes("hans")) {
+      return "zh";
+    }
+    return sys.includes("hant") || sys.includes("-tw") || sys.includes("-hk") || sys.includes("-mo")
+      ? "zh-TW"
+      : "zh";
   }
   return OS_LANGUAGE_SUBTAGS[sys.split("-")[0]] ?? "en";
 };

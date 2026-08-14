@@ -16,4 +16,3 @@
 ## 4. Upstream
 
 - [ ] 4.1 Open this PR against `upstream/main` **after** the `fix/i18n-stored-language-race` PR lands (or rebase onto its merge commit). PR body MUST state explicitly that this changes first-run default behavior (was unconditional `zh`).
-- [ ] 4.2 In the PR body, raise the shared-clientStorage-test-mock-helper idea as an optional question/offer (see proposal.md "Optional follow-up to offer, not to force") — not a requirement, not bundled into this diff.
