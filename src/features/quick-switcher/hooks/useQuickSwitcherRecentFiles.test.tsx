@@ -10,6 +10,7 @@ const storageMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../../../services/clientStorage", () => ({
+  loadClientStore: vi.fn(() => Promise.resolve()),
   getClientStoreSync: storageMocks.getClientStoreSync,
   writeClientStoreValue: vi.fn(),
 }));

@@ -12,6 +12,7 @@ const clientStoreCache = new Map<string, unknown>();
 const writeOrder: string[] = [];
 
 vi.mock("../../../services/clientStorage", () => ({
+  loadClientStore: vi.fn(() => Promise.resolve()),
   getClientStoreSync: vi.fn((store: string, key: string) => clientStoreCache.get(`${store}:${key}`)),
   writeClientStoreValue: vi.fn((store: string, key: string, value: unknown) => {
     clientStoreCache.set(`${store}:${key}`, value);

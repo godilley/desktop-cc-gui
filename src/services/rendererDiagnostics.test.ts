@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const clientStorageMocks = vi.hoisted(() => ({
+  loadClientStore: vi.fn(() => Promise.resolve()),
   getClientStoreSync: vi.fn(),
   isPreloaded: vi.fn(),
   writeClientStoreValue: vi.fn(),

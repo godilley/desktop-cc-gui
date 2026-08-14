@@ -198,6 +198,7 @@ function resolveStartupThreadComposerSelection(
 }
 
 vi.mock("./services/clientStorage", () => ({
+  loadClientStore: vi.fn(() => Promise.resolve()),
   getClientStoreSync: vi.fn(
     (store: keyof typeof startupState.clientStore, key: string) => {
       return startupState.clientStore[store]?.[key];

@@ -17,32 +17,52 @@ const dirtyKeys: Partial<Record<ClientStoreName, Set<string>>> = {};
 const pendingFullReplace: Partial<Record<ClientStoreName, boolean>> = {};
 const writeChainByStore: Partial<Record<ClientStoreName, Promise<void>>> = {};
 
+const loadedStores = new Set<ClientStoreName>();
+const inFlightStoreLoads: Partial<Record<ClientStoreName, Promise<void>>> = {};
+
+async function loadStoreIntoCache(store: ClientStoreName): Promise<void> {
+  try {
+    const raw = await invoke<unknown>("client_store_read", { store });
+    const normalized = normalizeClientStoreSnapshot(raw);
+    if (normalized.recoveryReason) {
+      queueMicrotask(() => {
+        writeClientStoreData(store, normalized.data, { immediate: true });
+      });
+    }
+    cache[store] = normalized.data;
+  } catch {
+    cache[store] = {};
+  }
+  loadedStores.add(store);
+}
+
+/**
+ * Load a single client store into the in-memory cache. Idempotent and
+ * de-duplicated: concurrent callers share one in-flight read, and a store
+ * already loaded (here or via {@link preloadClientStores}) resolves instantly.
+ * Lets early consumers (e.g. i18n startup) read the store they need without
+ * waiting on the full preload.
+ */
+export async function loadClientStore(store: ClientStoreName): Promise<void> {
+  if (loadedStores.has(store)) {
+    return;
+  }
+  const existing = inFlightStoreLoads[store];
+  if (existing) {
+    return existing;
+  }
+  const load = loadStoreIntoCache(store).finally(() => {
+    delete inFlightStoreLoads[store];
+  });
+  inFlightStoreLoads[store] = load;
+  return load;
+}
+
 export async function preloadClientStores(): Promise<void> {
   if (preloaded) {
     return;
   }
-  const results = await Promise.all(
-    ALL_CLIENT_STORES.map(async (store) => {
-      try {
-        const raw = await invoke<unknown>(
-          "client_store_read",
-          { store },
-        );
-        const normalized = normalizeClientStoreSnapshot(raw);
-        if (normalized.recoveryReason) {
-          queueMicrotask(() => {
-            writeClientStoreData(store, normalized.data, { immediate: true });
-          });
-        }
-        return [store, normalized.data] as const;
-      } catch {
-        return [store, {}] as const;
-      }
-    }),
-  );
-  for (const [store, data] of results) {
-    cache[store] = data;
-  }
+  await Promise.all(ALL_CLIENT_STORES.map((store) => loadClientStore(store)));
   preloaded = true;
 }
 
@@ -52,8 +72,10 @@ export function isPreloaded(): boolean {
 
 export function resetClientStorageForTests(): void {
   preloaded = false;
+  loadedStores.clear();
   for (const store of ALL_CLIENT_STORES) {
     delete cache[store];
+    delete inFlightStoreLoads[store];
     if (pendingTimers[store] != null) {
       clearTimeout(pendingTimers[store]);
       delete pendingTimers[store];

@@ -147,6 +147,7 @@ vi.mock("../../git/components/WorkspaceEditableDiffReviewSurface", () => ({
 }));
 
 vi.mock("../../../services/clientStorage", () => ({
+  loadClientStore: vi.fn(() => Promise.resolve()),
   getClientStoreSync: vi.fn(),
   writeClientStoreValue: vi.fn(),
 }));

@@ -24,6 +24,7 @@ vi.mock("react-i18next", () => ({
 }));
 
 vi.mock("../../../../../services/clientStorage", () => ({
+  loadClientStore: vi.fn(() => Promise.resolve()),
   getClientStoreSync: (_store: string, key: string) => layoutStore.get(key),
   writeClientStoreValue: (_store: string, key: string, value: unknown) => {
     layoutStore.set(key, value);

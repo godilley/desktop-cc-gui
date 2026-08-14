@@ -132,6 +132,7 @@ vi.mock("../../../services/globalRuntimeNotices", () => ({
   pushGlobalRuntimeNotice: vi.fn(),
 }));
 vi.mock("../../../services/clientStorage", () => ({
+  loadClientStore: vi.fn(() => Promise.resolve()),
   getClientStoreSync: clientStoreMock.getClientStoreSync,
   writeClientStoreValue: clientStoreMock.writeClientStoreValue,
 }));

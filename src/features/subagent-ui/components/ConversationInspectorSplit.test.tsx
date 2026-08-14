@@ -10,6 +10,7 @@ const getClientStoreSync = vi.fn();
 const writeClientStoreValue = vi.fn();
 
 vi.mock("../../../services/clientStorage", () => ({
+  loadClientStore: vi.fn(() => Promise.resolve()),
   getClientStoreSync: (...args: unknown[]) => getClientStoreSync(...args),
   writeClientStoreValue: (...args: unknown[]) =>
     writeClientStoreValue(...args),

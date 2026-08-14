@@ -1,10 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let storedLanguage = "zh";
+let cachePopulated = false;
 const writeClientStoreValueMock = vi.hoisted(() => vi.fn());
+const loadClientStoreMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../services/clientStorage", () => ({
-  getClientStoreSync: vi.fn(() => storedLanguage),
+  // Only readable once loadClientStore "resolves" — mirrors the real bootstrap
+  // race: the sync cache is empty until the store finishes loading.
+  getClientStoreSync: vi.fn(() => (cachePopulated ? storedLanguage : undefined)),
+  loadClientStore: loadClientStoreMock,
   writeClientStoreValue: writeClientStoreValueMock,
 }));
 
@@ -12,7 +17,11 @@ describe("i18n dynamic locale loading", () => {
   beforeEach(() => {
     vi.resetModules();
     storedLanguage = "zh";
+    cachePopulated = false;
     writeClientStoreValueMock.mockReset();
+    loadClientStoreMock.mockReset().mockImplementation(async () => {
+      cachePopulated = true;
+    });
   });
 
   it("loads only the stored startup locale and loads another locale on switch", async () => {
@@ -32,6 +41,18 @@ describe("i18n dynamic locale loading", () => {
     expect(i18n.hasResourceBundle("en", "translation")).toBe(true);
     expect(i18n.t("files.loadingFiles")).not.toBe("files.loadingFiles");
     expect(i18n.t("settings.sidebarBasic")).not.toBe("settings.sidebarBasic");
+  });
+
+  it("awaits loadClientStore before reading the stored language (regression for #1085)", async () => {
+    // Without the await, getClientStoreSync would still see an empty cache
+    // here and fall back to the hardcoded default instead of the saved "en".
+    storedLanguage = "en";
+
+    const module = await import("./index");
+    const i18n = await module.i18nReady;
+
+    expect(loadClientStoreMock).toHaveBeenCalledWith("app");
+    expect(i18n.language).toBe("en");
   });
 
   it("loads a newly shipped translation bundle on switch", async () => {

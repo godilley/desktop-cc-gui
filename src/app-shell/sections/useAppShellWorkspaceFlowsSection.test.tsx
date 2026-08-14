@@ -14,6 +14,7 @@ vi.mock("../../services/systemNotification", () => ({
 }));
 
 vi.mock("../../services/clientStorage", () => ({
+  loadClientStore: vi.fn(() => Promise.resolve()),
   writeClientStoreValue: vi.fn(),
 }));
 

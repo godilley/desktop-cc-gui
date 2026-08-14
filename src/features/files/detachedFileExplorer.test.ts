@@ -25,6 +25,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 vi.mock("../../services/clientStorage", () => ({
+  loadClientStore: vi.fn(() => Promise.resolve()),
   writeClientStoreValue: (...args: any[]) => (writeClientStoreValueMock as any)(...args),
   getClientStoreSync: (...args: any[]) => (getClientStoreSyncMock as any)(...args),
 }));

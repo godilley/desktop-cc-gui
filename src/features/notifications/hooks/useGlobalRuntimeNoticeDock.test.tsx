@@ -34,6 +34,7 @@ function isReactActWarning(args: unknown[]): boolean {
 }
 
 vi.mock("../../../services/clientStorage", () => ({
+  loadClientStore: vi.fn(() => Promise.resolve()),
   getClientStoreSync: clientStorageMocks.getClientStoreSync,
   writeClientStoreValue: clientStorageMocks.writeClientStoreValue,
 }));

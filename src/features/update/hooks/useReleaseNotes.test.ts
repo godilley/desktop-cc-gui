@@ -13,6 +13,7 @@ vi.mock("@tauri-apps/api/app", () => ({
 }));
 
 vi.mock("../../../services/clientStorage", () => ({
+  loadClientStore: vi.fn(() => Promise.resolve()),
   getClientStoreSync: vi.fn(),
   writeClientStoreValue: vi.fn(),
 }));

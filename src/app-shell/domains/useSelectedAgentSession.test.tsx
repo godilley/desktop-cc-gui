@@ -33,6 +33,7 @@ const {
 });
 
 vi.mock("../../services/clientStorage", () => ({
+  loadClientStore: vi.fn(() => Promise.resolve()),
   getClientStoreSync,
   writeClientStoreValue,
 }));

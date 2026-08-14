@@ -37,6 +37,7 @@ vi.mock("../../../services/tauri", () => ({
   switchEngine: vi.fn(),
 }));
 vi.mock("../../../services/clientStorage", () => ({
+  loadClientStore: vi.fn(() => Promise.resolve()),
   getClientStoreSync: vi.fn(),
   writeClientStoreValue: vi.fn(),
 }));

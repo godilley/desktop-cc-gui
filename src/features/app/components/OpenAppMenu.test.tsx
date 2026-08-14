@@ -17,6 +17,7 @@ vi.mock("../../../services/toasts", () => ({
 }));
 
 vi.mock("../../../services/clientStorage", () => ({
+  loadClientStore: vi.fn(() => Promise.resolve()),
   writeClientStoreValue: vi.fn(),
 }));
 

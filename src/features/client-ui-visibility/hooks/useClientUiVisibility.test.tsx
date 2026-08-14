@@ -12,6 +12,7 @@ import { useClientUiVisibility } from "./useClientUiVisibility";
 const clientStore = new Map<string, unknown>();
 
 vi.mock("../../../services/clientStorage", () => ({
+  loadClientStore: vi.fn(() => Promise.resolve()),
   getClientStoreSync: vi.fn((store: string, key: string) =>
     clientStore.get(`${store}:${key}`),
   ),

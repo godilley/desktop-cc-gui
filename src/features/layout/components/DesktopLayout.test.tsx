@@ -6,6 +6,7 @@ import { DesktopLayout } from "./DesktopLayout";
 import { useWorkspaceNoteCardsLayout } from "../../note-cards/components/WorkspaceNoteCardsLayoutContext";
 
 const clientStorageMock = vi.hoisted(() => ({
+  loadClientStore: vi.fn(() => Promise.resolve()),
   getClientStoreSync: vi.fn(),
   writeClientStoreValue: vi.fn(),
 }));

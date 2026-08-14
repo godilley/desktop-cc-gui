@@ -29,6 +29,7 @@ clientStorageMock.writeClientStoreValue.mockImplementation(
 );
 
 vi.mock("../../../services/clientStorage", () => ({
+  loadClientStore: vi.fn(() => Promise.resolve()),
   getClientStoreSync: clientStorageMock.getClientStoreSync,
   writeClientStoreValue: clientStorageMock.writeClientStoreValue,
 }));

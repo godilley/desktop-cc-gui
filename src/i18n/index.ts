@@ -1,6 +1,10 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
-import { getClientStoreSync, writeClientStoreValue } from "../services/clientStorage";
+import {
+  getClientStoreSync,
+  loadClientStore,
+  writeClientStoreValue,
+} from "../services/clientStorage";
 
 export type SupportedLanguage =
   | "zh"
@@ -155,6 +159,11 @@ i18nInstance.changeLanguage = (async (
 }) as typeof i18nInstance.changeLanguage;
 
 export const i18nReady = (async () => {
+  // Ensure the "app" store is in cache before we read the saved language —
+  // otherwise the sync read races the bootstrap preload and we'd fall back to
+  // the hardcoded default even when the user has an explicit choice saved.
+  // Fixes upstream #1085 (saved language reset on every restart).
+  await loadClientStore("app");
   const initialLanguage = await loadLanguageResource(getStoredLanguage());
   const resources = Object.entries(loadedResources).reduce<
     Record<string, { translation: Record<string, unknown> }>

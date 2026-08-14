@@ -104,6 +104,7 @@ vi.mock("../../../utils/platform", () => ({
 }));
 
 vi.mock("../../../services/clientStorage", () => ({
+  loadClientStore: vi.fn(() => Promise.resolve()),
   getClientStoreSync: vi.fn(() => "vscode"),
 }));
 
