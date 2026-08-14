@@ -6,7 +6,7 @@ const writeClientStoreValueMock = vi.hoisted(() => vi.fn());
 const loadClientStoreMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../services/clientStorage", () => ({
-  // Only readable once loadClientStore "resolves" — mirrors the real bootstrap
+  // Only readable once loadClientStore "resolves", mirroring the real bootstrap
   // race: the sync cache is empty until the store finishes loading.
   getClientStoreSync: vi.fn(() => (cachePopulated ? storedLanguage : undefined)),
   loadClientStore: loadClientStoreMock,

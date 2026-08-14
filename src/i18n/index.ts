@@ -159,7 +159,7 @@ i18nInstance.changeLanguage = (async (
 }) as typeof i18nInstance.changeLanguage;
 
 export const i18nReady = (async () => {
-  // Ensure the "app" store is in cache before we read the saved language —
+  // Ensure the "app" store is in cache before we read the saved language,
   // otherwise the sync read races the bootstrap preload and we'd fall back to
   // the hardcoded default even when the user has an explicit choice saved.
   // Fixes upstream #1085 (saved language reset on every restart).

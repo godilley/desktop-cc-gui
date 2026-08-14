@@ -31,6 +31,9 @@ async function loadStoreIntoCache(store: ClientStoreName): Promise<void> {
     }
     cache[store] = normalized.data;
   } catch {
+    // Pre-existing semantics, carried over from the old preloadClientStores:
+    // a failed read still marks the store loaded (empty cache), so it's not
+    // retried this session. Unchanged behavior, just reachable earlier now.
     cache[store] = {};
   }
   loadedStores.add(store);

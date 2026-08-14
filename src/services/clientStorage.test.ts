@@ -138,6 +138,34 @@ describe("clientStorage", () => {
     });
   });
 
+  it("de-duplicates concurrent loadClientStore calls into a single read", async () => {
+    const invokeMock = vi.mocked(invoke);
+    const storage = await import("./clientStorage");
+    storage.resetClientStorageForTests();
+    invokeMock.mockImplementation(async (command, payload) => {
+      const args =
+        payload && typeof payload === "object" && !Array.isArray(payload)
+          ? (payload as Record<string, unknown>)
+          : null;
+      if (command === "client_store_read" && args?.store === "app") {
+        return { __schemaVersion: 1, language: "en" };
+      }
+      return null;
+    });
+
+    await Promise.all([
+      storage.loadClientStore("app"),
+      storage.loadClientStore("app"),
+    ]);
+
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    expect(storage.getClientStoreSync("app", "language")).toBe("en");
+
+    await storage.loadClientStore("app");
+
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+  });
+
   it("rehydrates persisted schema stores after an in-memory reset without exposing schema metadata", async () => {
     const invokeMock = vi.mocked(invoke);
     const storage = await import("./clientStorage");
