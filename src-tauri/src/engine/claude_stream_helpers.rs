@@ -363,6 +363,30 @@ pub(super) fn extract_background_task_id(event: &Value) -> Option<String> {
         })
 }
 
+/// Extract a Task/Agent async-launch id from a structured `task_started` system event.
+///
+/// This is the pre-result pending-task counterpart to `extract_background_task_id`: Agent/Task
+/// async-launch tool results use a different field shape (`toolUseResult.agentId` /
+/// `toolUseResult.isAsync` / `status: "async_launched"`) that `extract_background_task_id` never
+/// matches, and, unlike Bash background shells, the CLI observably defers this turn's own
+/// `result` event until every pending Agent/Task subagent has settled (probe evidence in
+/// `openspec/changes/fix-claude-agent-pending-task-unbounded-wait/design.md` Context), so a
+/// hung/crashed subagent that never emits a terminal `task_notification` leaves `result_seen_at`
+/// permanently `None` with no bound
+/// on the wait. This reads the `task_started` system event's own `task_id` directly, the same
+/// field the existing `extract_terminal_task_release_id` release path already matches against.
+pub(super) fn extract_task_started_id(event: &Value) -> Option<String> {
+    let is_task_started = event.get("type").and_then(|v| v.as_str()) == Some("system")
+        && event.get("subtype").and_then(|v| v.as_str()) == Some("task_started");
+    if !is_task_started {
+        return None;
+    }
+    event
+        .get("task_id")
+        .and_then(|v| v.as_str())
+        .and_then(normalize_background_task_id)
+}
+
 /// Whether a task-notification status is terminal for blocker release.
 pub(super) fn is_terminal_background_task_status(status: &str) -> bool {
     let lower = status.trim().to_ascii_lowercase();
@@ -584,6 +608,47 @@ mod background_task_settlement_tests {
         let long_id = "x".repeat(CLAUDE_BG_TASK_ID_MAX_LEN + 1);
         let event = json!({ "toolUseResult": { "backgroundTaskId": long_id } });
         assert!(extract_background_task_id(&event).is_none());
+    }
+
+    #[test]
+    fn extract_task_started_id_reads_top_level_task_id() {
+        let event = json!({
+            "type": "system",
+            "subtype": "task_started",
+            "task_id": "agent-1",
+            "tool_use_id": "toolu_1"
+        });
+        assert_eq!(extract_task_started_id(&event).as_deref(), Some("agent-1"));
+    }
+
+    #[test]
+    fn extract_task_started_id_ignores_other_subtypes_and_event_types() {
+        let wrong_subtype = json!({
+            "type": "system",
+            "subtype": "task_updated",
+            "task_id": "agent-1"
+        });
+        assert!(extract_task_started_id(&wrong_subtype).is_none());
+
+        let wrong_type = json!({
+            "type": "assistant",
+            "subtype": "task_started",
+            "task_id": "agent-1"
+        });
+        assert!(extract_task_started_id(&wrong_type).is_none());
+
+        let missing_id = json!({ "type": "system", "subtype": "task_started" });
+        assert!(extract_task_started_id(&missing_id).is_none());
+    }
+
+    #[test]
+    fn extract_task_started_id_rejects_empty_and_overlong() {
+        let empty = json!({ "type": "system", "subtype": "task_started", "task_id": "   " });
+        assert!(extract_task_started_id(&empty).is_none());
+
+        let long_id = "x".repeat(CLAUDE_BG_TASK_ID_MAX_LEN + 1);
+        let overlong = json!({ "type": "system", "subtype": "task_started", "task_id": long_id });
+        assert!(extract_task_started_id(&overlong).is_none());
     }
 
     #[test]

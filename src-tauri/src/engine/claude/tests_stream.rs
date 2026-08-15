@@ -1249,6 +1249,228 @@ async fn send_message_releases_background_blocker_on_matching_terminal_notificat
     );
 }
 
+/// The real, reachable gap `fix-claude-agent-pending-task-unbounded-wait` closes: a backgrounded
+/// Agent/Task subagent (`task_started`) that never emits a terminal `task_notification`, and per
+/// the CLI's observed behavior, never emits `result` either, since it defers `result` until every
+/// pending background task settles (probe evidence in this change's design.md Context). Before
+/// this change, the pre-result wait was completely unbounded; this must now force-settle at
+/// CLAUDE_BG_TASK_MAX_WAIT (3s in test mode) instead of hanging on the 30s sleep below forever.
+#[cfg(unix)]
+#[tokio::test]
+async fn send_message_force_settles_pending_agent_task_that_never_notifies() {
+    let script_body = concat!(
+        "#!/bin/sh\n",
+        "echo '{\"type\":\"system\",\"subtype\":\"task_started\",\"task_id\":\"agent-hang-1\",\"tool_use_id\":\"toolu_1\"}'\n",
+        "# Never emit a task_notification or a result, simulates a crashed/hung subagent.\n",
+        "sleep 30\n",
+        "exit 0\n",
+    );
+    let (root, workspace_path, script_path) = create_fake_claude_script(script_body);
+    let session = test_session_with_bin(workspace_path, script_path);
+    let mut receiver = session.subscribe();
+    let mut params = SendMessageParams::default();
+    params.text = "launch a background agent".to_string();
+
+    let started = std::time::Instant::now();
+    let response = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        session.send_message(params, "turn-pending-hang"),
+    )
+    .await
+    .expect("send_message must force-settle at the pending-task max-wait, not hang on the 30s sleep")
+    .expect("a force-settled pending task is a success (result was never expected to arrive)");
+    let elapsed = started.elapsed();
+
+    let events = drain_turn_events(&mut receiver);
+    let _ = std::fs::remove_dir_all(&root);
+
+    assert!(
+        response.contains("did not report back") && response.contains("abandoned"),
+        "abandonment must be a visible notice, never silent empty-success; got {response:?}"
+    );
+    assert!(
+        elapsed >= std::time::Duration::from_secs(2) && elapsed < std::time::Duration::from_secs(10),
+        "expected force-settle around the 3s test CLAUDE_BG_TASK_MAX_WAIT, not the 30s sleep; elapsed={elapsed:?}"
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event.event, EngineEvent::TurnCompleted { .. }))
+            .count(),
+        1,
+        "exactly one TurnCompleted after the pending-task max-wait force-settles the turn"
+    );
+}
+
+/// CLAUDE_BG_TASK_MAX_WAIT is an IDLE bound, not an absolute one: a subagent that keeps producing
+/// genuine activity must survive well past the raw 3s test constant, because every received line
+/// resets the deadline. Emits an activity line every 1.5s (under the 3s window) for three rounds,
+/// 4.5s total and already past the raw constant, before settling normally. A regression to an
+/// absolute bound would force-kill this around t=3s instead.
+#[cfg(unix)]
+#[tokio::test]
+async fn send_message_pending_agent_task_idle_reset_survives_past_raw_max_wait() {
+    let script_body = concat!(
+        "#!/bin/sh\n",
+        "echo '{\"type\":\"system\",\"subtype\":\"task_started\",\"task_id\":\"agent-active-1\",\"tool_use_id\":\"toolu_1\"}'\n",
+        "sleep 1.5\n",
+        "echo '{\"type\":\"system\",\"subtype\":\"task_progress\",\"task_id\":\"agent-active-1\"}'\n",
+        "sleep 1.5\n",
+        "echo '{\"type\":\"system\",\"subtype\":\"task_progress\",\"task_id\":\"agent-active-1\"}'\n",
+        "sleep 1.5\n",
+        "echo '{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"<task-notification><task-id>agent-active-1</task-id><status>completed</status><result>done</result></task-notification>\"}]}}'\n",
+        "echo '{\"type\":\"result\",\"session_id\":\"11111111-1111-4111-8111-111111111111\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"final answer\"}]}}'\n",
+        "exit 0\n",
+    );
+    let (root, workspace_path, script_path) = create_fake_claude_script(script_body);
+    let session = test_session_with_bin(workspace_path, script_path);
+    let mut receiver = session.subscribe();
+    let mut params = SendMessageParams::default();
+    params.text = "launch a background agent that keeps working".to_string();
+
+    let started = std::time::Instant::now();
+    let response = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        session.send_message(params, "turn-pending-idle-reset"),
+    )
+    .await
+    .expect("send_message must not hang past the outer test timeout")
+    .expect("a genuinely active pending task must settle normally, not be force-killed");
+    let elapsed = started.elapsed();
+
+    let events = drain_turn_events(&mut receiver);
+    let _ = std::fs::remove_dir_all(&root);
+
+    // The assistant text (the notification's own content) arrives before `result` here,
+    // matching the real observed CLI ordering (task_started -> task_notification -> result) -
+    // so `saw_text_delta` is already true by the time `result` is seen and its text is never
+    // separately synthesized (existing, pre-existing behavior, not something this change
+    // touches). What actually matters for this test is that the turn settled as a genuine
+    // success and was NOT abandoned - assert on that, not on which exact event's text won.
+    assert!(
+        !response.contains("did not report back") && !response.is_empty(),
+        "an actively-progressing subagent must complete normally, not be abandoned; got {response:?}"
+    );
+    assert!(
+        elapsed >= std::time::Duration::from_millis(4000),
+        "expected the full ~4.5s activity sequence to complete, proving the idle-reset kept the \
+         bound from firing at the raw 3s constant; elapsed={elapsed:?}"
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event.event, EngineEvent::TurnCompleted { .. }))
+            .count(),
+        1
+    );
+}
+
+/// A pending Agent/Task subagent that settles normally (terminal `task_notification` arrives
+/// before `result`, matching the CLI's observed real ordering) must NOT be affected by the new
+/// max-wait bound at all, the turn should complete essentially immediately, not wait anywhere
+/// near CLAUDE_BG_TASK_MAX_WAIT.
+#[cfg(unix)]
+#[tokio::test]
+async fn send_message_pending_agent_task_settles_normally_before_result() {
+    let script_body = concat!(
+        "#!/bin/sh\n",
+        "echo '{\"type\":\"system\",\"subtype\":\"task_started\",\"task_id\":\"agent-notify-1\",\"tool_use_id\":\"toolu_1\"}'\n",
+        "echo '{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"<task-notification><task-id>agent-notify-1</task-id><status>completed</status><result>done</result></task-notification>\"}]}}'\n",
+        "echo '{\"type\":\"result\",\"session_id\":\"11111111-1111-4111-8111-111111111111\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"final answer\"}]}}'\n",
+        "exit 0\n",
+    );
+    let (root, workspace_path, script_path) = create_fake_claude_script(script_body);
+    let session = test_session_with_bin(workspace_path, script_path);
+    let mut receiver = session.subscribe();
+    let mut params = SendMessageParams::default();
+    params.text = "launch a background agent".to_string();
+
+    let started = std::time::Instant::now();
+    let response = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        session.send_message(params, "turn-pending-settle"),
+    )
+    .await
+    .expect("send_message must not hang when the pending task settles before result")
+    .expect("normal settlement before result should succeed");
+    let elapsed = started.elapsed();
+
+    let events = drain_turn_events(&mut receiver);
+    let _ = std::fs::remove_dir_all(&root);
+
+    // Same ordering note as the idle-reset test above: the notification's own assistant text
+    // arrives before `result`, so that text - not `result`'s separate "final answer" - is what
+    // ends up as the response (existing, pre-existing synthesize-only-if-no-delta-seen
+    // behavior). What this test actually verifies is settlement without abandonment.
+    assert!(
+        !response.contains("did not report back") && !response.is_empty(),
+        "settlement before result should succeed, not be abandoned; got {response:?}"
+    );
+    assert!(
+        elapsed < std::time::Duration::from_secs(2),
+        "should settle almost immediately, not wait toward CLAUDE_BG_TASK_MAX_WAIT; elapsed={elapsed:?}"
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event.event, EngineEvent::TurnCompleted { .. }))
+            .count(),
+        1
+    );
+}
+
+/// A normal turn with no `task_started` at all must be completely unaffected by
+/// CLAUDE_BG_TASK_MAX_WAIT (3s in test mode): the pre-result wait must remain unbounded for a
+/// legitimate turn that simply takes a while, with no risk indicator present.
+#[cfg(unix)]
+#[tokio::test]
+async fn send_message_unaffected_turn_survives_past_pending_task_max_wait() {
+    let script_body = concat!(
+        "#!/bin/sh\n",
+        // A leading valid event (not an assistant text delta - that would trigger the
+        // pre-existing synthesize-only-if-no-delta-seen behavior exercised by the two tests
+        // above, which is not what this test is about) so the long sleep below exercises the
+        // genuinely-unbounded-once-streaming branch, not the separate first-event timeout.
+        "echo '{\"type\":\"system\",\"subtype\":\"init\"}'\n",
+        // No task_started anywhere in this script - keep going well past the 3s test
+        // CLAUDE_BG_TASK_MAX_WAIT to prove it never armed.
+        "sleep 4\n",
+        "echo '{\"type\":\"result\",\"session_id\":\"11111111-1111-4111-8111-111111111111\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"final answer\"}]}}'\n",
+        "exit 0\n",
+    );
+    let (root, workspace_path, script_path) = create_fake_claude_script(script_body);
+    let session = test_session_with_bin(workspace_path, script_path);
+    let mut receiver = session.subscribe();
+    let mut params = SendMessageParams::default();
+    params.text = "hello".to_string();
+
+    let started = std::time::Instant::now();
+    let response = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        session.send_message(params, "turn-no-pending-task"),
+    )
+    .await
+    .expect("send_message must not be force-settled by a bound that was never armed")
+    .expect("a normal long turn with no background task should succeed");
+    let elapsed = started.elapsed();
+
+    let events = drain_turn_events(&mut receiver);
+    let _ = std::fs::remove_dir_all(&root);
+
+    assert_eq!(response, "final answer");
+    assert!(
+        elapsed >= std::time::Duration::from_secs(4),
+        "a normal turn with no task_started must survive past the 3s test max-wait unaffected; elapsed={elapsed:?}"
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event.event, EngineEvent::TurnCompleted { .. }))
+            .count(),
+        1
+    );
+}
+
 /// Regression: once Claude emits its final `result`, the turn must settle even
 /// if an MCP child / Stop hook inherits stdout and keeps the pipe open past the
 /// CLI leader's exit. Before the post-result grace was wired into the read loop,
